@@ -26,6 +26,10 @@ steps:
 # Specify the timeout for the build
 timeout: '1800s'
 
+# Logging configuration
+options:
+  logging: CLOUD_LOGGING_ONLY
+
 # Images to be pushed to Artifact Registry
 images:
   - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/web-assembly/frontend:latest'
