@@ -1,11 +1,11 @@
 steps:
   # Build the Docker image
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/web-assembly/frontend:latest', '-t', 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/web-assembly/frontend:$BUILD_ID', '.']
+    args: ['build', '-t', 'asia-southeast1-docker.pkg.dev/striking-ruler-506214-f6/web-assembly/frontend:latest', '-t', 'asia-southeast1-docker.pkg.dev/striking-ruler-506214-f6/web-assembly/frontend:$BUILD_ID', '.']
 
   # Push the Docker image to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/web-assembly/frontend:latest']
+    args: ['push', 'asia-southeast1-docker.pkg.dev/striking-ruler-506214-f6/web-assembly/frontend:latest']
 
   # Deploy to Cloud Run
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -13,7 +13,7 @@ steps:
       - 'run'
       - 'deploy'
       - 'web-assembly-frontend'
-      - '--image=asia-southeast1-docker.pkg.dev/$PROJECT_ID/web-assembly/frontend:latest'
+      - '--image=asia-southeast1-docker.pkg.dev/striking-ruler-506214-f6/web-assembly/frontend:latest'
       - '--platform=managed'
       - '--region=asia-southeast1'
       - '--allow-unauthenticated'
@@ -32,5 +32,5 @@ options:
 
 # Images to be pushed to Artifact Registry
 images:
-  - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/web-assembly/frontend:latest'
-  - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/web-assembly/frontend:$BUILD_ID'
+  - 'asia-southeast1-docker.pkg.dev/striking-ruler-506214-f6/web-assembly/frontend:latest'
+  - 'asia-southeast1-docker.pkg.dev/striking-ruler-506214-f6/web-assembly/frontend:$BUILD_ID'
