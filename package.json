@@ -6,12 +6,19 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --test lib/*.test.ts"
   },
   "dependencies": {
+    "@react-three/drei": "^10.7.9",
+    "@react-three/fiber": "^9.8.1",
+    "axios": "^1.20.0",
     "next": "16.3.8",
+    "npyjs": "^1.2.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "three": "^0.186.1",
+    "three-stdlib": "^2.36.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
