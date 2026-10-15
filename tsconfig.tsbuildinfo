@@ -1,0 +1,1 @@
+{"root":["./src/main.ts","./src/vite-env.d.ts","./src/lib/animation.test.ts","./src/lib/animation.ts","./src/types/npyjs.d.ts","./src/app.vue","./src/components/threescene.vue","./vite.config.ts"],"version":"5.9.3"}

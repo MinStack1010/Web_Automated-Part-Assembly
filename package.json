@@ -1,0 +1,28 @@
+{
+  "name": "3d-assembly-dashboard-vue",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "node --test src/lib/*.test.ts"
+  },
+  "dependencies": {
+    "axios": "^1.20.0",
+    "npyjs": "^1.2.0",
+    "three": "^0.186.1",
+    "vue": "^3.5.18"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4",
+    "@types/node": "^20.19.43",
+    "@types/three": "^0.186.0",
+    "@vitejs/plugin-vue": "^6",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vite": "^7",
+    "vue-tsc": "^2"
+  }
+}
