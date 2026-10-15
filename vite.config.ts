@@ -2,8 +2,8 @@ import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import tailwindcss from "@tailwindcss/vite";
 
-// Tương đương rewrites() trong next.config.ts:
-// request /backend/* được proxy ngầm sang backend Docker ở port 8000.
+// Equivalent of rewrites() in next.config.ts:
+// requests to /backend/* are transparently proxied to the Docker backend on port 8000.
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
   server: {

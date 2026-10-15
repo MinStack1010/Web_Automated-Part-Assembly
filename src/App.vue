@@ -1,6 +1,24 @@
 <template>
-  <div class="flex h-screen bg-gray-950 text-white font-sans overflow-hidden">
-    <div class="w-[450px] p-4 flex flex-col gap-4 bg-gray-900 border-r border-gray-800 overflow-y-auto custom-scrollbar">
+  <div class="flex flex-col lg:flex-row h-dvh bg-gray-950 text-white font-sans overflow-hidden">
+    <!-- Mobile tab switcher (desktop shows both panes side by side) -->
+    <div class="lg:hidden shrink-0 flex gap-2 p-2 bg-gray-900 border-b border-gray-800">
+      <button
+        @click="mobileTab = 'panel'"
+        :class="mobileTab === 'panel' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300'"
+        class="flex-1 py-2 rounded text-xs font-bold uppercase"
+      >
+        ☰ Panel
+      </button>
+      <button
+        @click="mobileTab = 'viewer'"
+        :class="mobileTab === 'viewer' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300'"
+        class="flex-1 py-2 rounded text-xs font-bold uppercase"
+      >
+        🧊 3D View
+      </button>
+    </div>
+
+    <div :class="[panelVisibility, 'w-full lg:w-[450px] lg:shrink-0 p-4 flex-col gap-4 bg-gray-900 lg:border-r border-gray-800 overflow-y-auto custom-scrollbar flex-1 min-h-0']">
       <div>
         <h1 class="text-xl font-bold text-blue-400">3D Assembly Panel</h1>
         <p class="text-xs text-gray-400">
@@ -41,7 +59,7 @@
         <h2 class="text-xs font-semibold text-gray-400 uppercase">2. Job Configuration</h2>
         <textarea
           v-model="payloadJson"
-          class="w-full h-48 bg-black text-green-400 font-mono text-[11px] p-2 rounded border border-gray-700 resize-y outline-none custom-scrollbar"
+          class="w-full h-40 lg:h-48 bg-black text-green-400 font-mono text-[11px] p-2 rounded border border-gray-700 resize-y outline-none custom-scrollbar"
           spellcheck="false"
         />
         <div class="flex gap-2 mt-2">
@@ -126,14 +144,14 @@
       </div>
 
       <!-- LOGS -->
-      <div class="h-32 shrink-0">
+      <div class="h-28 lg:h-32 shrink-0">
         <div class="bg-black p-2 rounded h-full overflow-y-auto font-mono text-[11px] text-gray-300 space-y-1 border border-gray-800">
           <div v-for="(log, i) in logs" :key="i">{{ log }}</div>
         </div>
       </div>
     </div>
 
-    <div class="flex-1 p-4 relative">
+    <div :class="[viewerVisibility, 'flex-1 min-h-0 p-2 sm:p-4 relative']">
       <div
         v-if="isPolling"
         class="absolute top-8 left-8 z-10 bg-black/80 px-4 py-2 rounded border border-emerald-500 text-emerald-400 font-mono text-sm animate-pulse shadow-[0_0_15px_rgba(16,185,129,0.5)]"
@@ -238,6 +256,10 @@ const logs = ref<string[]>([]);
 const sysStatus = ref("Checking...");
 const phase = ref<Phase>("idle");
 const playback = ref<PlaybackState>("stopped");
+// Active pane on small screens (desktop always shows both panes).
+const mobileTab = ref<"panel" | "viewer">("panel");
+const panelVisibility = computed(() => (mobileTab.value === "panel" ? "flex" : "hidden lg:flex"));
+const viewerVisibility = computed(() => (mobileTab.value === "viewer" ? "block" : "hidden lg:block"));
 
 const uploadId = ref<string | null>(null);
 const models = ref<LoadedModel[]>([]);
@@ -606,6 +628,8 @@ async function handleJobCompleted(id: string, endpoint: string) {
     animations.value = loadedAnims;
     missingParts.value = missing;
     phase.value = "ready-to-play";
+    // On mobile, jump straight to the 3D view so the user can press Play.
+    mobileTab.value = "viewer";
     const op = endpoint === "multi-plan" ? "Multi-Plan" : "Join-Plan";
     addLog(
       `${op}: ${loadedAnims.length}/${total} path(s) ready (${loadedAnims.map((a) => a.partId).join(", ")}).` +

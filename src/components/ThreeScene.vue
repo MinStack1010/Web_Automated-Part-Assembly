@@ -334,7 +334,7 @@ function initThree() {
   dir.position.set(10, 10, 5);
   scene.add(dir);
 
-  // Tương đương drei <Environment preset="city">: IBL trung tính, không cần tải HDR ngoài.
+  // Equivalent of drei <Environment preset="city">: neutral IBL, no external HDR download needed.
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
   pmrem.dispose();

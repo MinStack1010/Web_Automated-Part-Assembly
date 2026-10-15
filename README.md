@@ -1,23 +1,23 @@
 # 3D Assembly Dashboard (Vue)
 
-Port Vue 3 + Vite của `../3d-assembly-dashboard` (Next.js + React + R3F).
+Vue 3 + Vite port of `../3d-assembly-dashboard` (Next.js + React + R3F).
 
 ## Stack
 
 - Vue 3 + Vite + TypeScript
-- Three.js thuần (`three`, `OrbitControls`, `OBJLoader`) — thay cho `@react-three/fiber` / `@react-three/drei`
+- Plain Three.js (`three`, `OrbitControls`, `OBJLoader`) — replaces `@react-three/fiber` / `@react-three/drei`
 - Tailwind CSS v4 (`@tailwindcss/vite`)
 - `axios`, `npyjs`
 
-## Chạy dev
+## Run dev
 
 ```bash
 npm install
 npm run dev      # http://localhost:3000
 ```
 
-Request `/backend/*` được proxy ngầm sang backend Docker ở `http://localhost:8000`
-(tương đương `rewrites()` trong `next.config.ts` của bản Next.js).
+Requests to `/backend/*` are transparently proxied to the Docker backend at `http://localhost:8000`
+(equivalent of `rewrites()` in the Next.js version's `next.config.ts`).
 
 ## Build / test
 
@@ -27,9 +27,9 @@ npm run build
 npm run preview
 ```
 
-## Đối chiếu file gốc
+## Source file mapping
 
-| Next.js (bản gốc)              | Vue (bản này)                          |
+| Next.js (original)              | Vue (this port)                          |
 | ------------------------------ | --------------------------------------- |
 | `app/page.tsx`                 | `src/App.vue`                           |
 | `components/ThreeScreen.tsx`   | `src/components/ThreeScene.vue`         |
@@ -38,5 +38,5 @@ npm run preview
 | `app/layout.tsx` + `globals.css` | `index.html` + `src/main.ts` + `src/style.css` |
 | `next.config.ts` rewrites      | `vite.config.ts` proxy                  |
 
-Logic nghiệp vụ (upload → joint-plan/multi-plan → poll → validate → load artifacts
-JSON + fallback `.npy` → phát animation tuần tự) được giữ nguyên 1:1.
+Business logic (upload → joint-plan/multi-plan → poll → validate → load artifacts
+JSON + `.npy` fallback → sequential animation playback) is preserved 1:1.
