@@ -419,15 +419,15 @@ async function pollJob(id: string, endpoint: string, attempts: number) {
   if (cancelled) return;
   isPolling.value = true;
   phase.value = "planning";
-  const next = attempts + 1;
-  pollAttempt.value = next;
+  const attempt = attempts + 1;
+  pollAttempt.value = attempt;
 
   const checkStatus = async () => {
     if (cancelled) return;
     try {
       const { data } = await axios.get(`${API_BASE}/api/v1/jobs/${id}`, { timeout: 30000 });
       const currentStatus: string | undefined = data.result?.status || data.status;
-      addLog(`[Attempt ${next}] Job ${id.slice(0, 6)}… status: ${currentStatus}`);
+      addLog(`[Attempt ${attempt}] Job ${id.slice(0, 6)}… status: ${currentStatus}`);
 
       if (currentStatus === "completed") {
         stopPolling();
@@ -435,19 +435,19 @@ async function pollJob(id: string, endpoint: string, attempts: number) {
       } else if (currentStatus === "failed" || currentStatus === "cancelled") {
         stopPolling();
         await handleJobFailed(id, endpoint, currentStatus);
-      } else if (next >= MAX_POLL_ATTEMPTS) {
+      } else if (attempt >= MAX_POLL_ATTEMPTS) {
         stopPolling();
         phase.value = "planning";
         addLog(`Stopped polling after ${MAX_POLL_ATTEMPTS} attempts; job is still ${currentStatus}. Check status manually.`);
       } else {
-        pollTimer = setTimeout(() => void pollJob(id, endpoint, next), POLL_INTERVAL_MS);
+        pollTimer = setTimeout(() => void pollJob(id, endpoint, attempt), POLL_INTERVAL_MS);
       }
     } catch (error: unknown) {
       if (cancelled) return;
       // Transient network/proxy blips must not spawn duplicate jobs: just retry the status read.
-      if (axios.isAxiosError(error) && !error.response && next < MAX_POLL_ATTEMPTS) {
+      if (axios.isAxiosError(error) && !error.response && attempt < MAX_POLL_ATTEMPTS) {
         addLog(`Poll network blip (${error.message}). Retrying...`);
-        pollTimer = setTimeout(() => void pollJob(id, endpoint, next), POLL_INTERVAL_MS);
+        pollTimer = setTimeout(() => void pollJob(id, endpoint, attempt), POLL_INTERVAL_MS);
       } else {
         stopPolling();
         addLog(`Polling error: ${axios.isAxiosError(error) ? error.message : String(error)}`);
