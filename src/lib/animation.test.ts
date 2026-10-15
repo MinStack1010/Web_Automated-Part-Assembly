@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { stemOf, isFiniteMatrix, firstBadFrameIndex, flattenRowMajor } from "./animation.ts";
+import { stemOf, isFiniteMatrix, firstBadFrameIndex, flattenRowMajor, sanitizeObjectName, matchObjectNames, registerModels } from "./animation.ts";
 
 const IDENTITY = [
   [1, 0, 0, 0],
@@ -50,6 +50,77 @@ describe("firstBadFrameIndex", () => {
     assert.equal(firstBadFrameIndex([]), 0);
     assert.equal(firstBadFrameIndex([{ matrix: IDENTITY }]), 0);
     assert.equal(firstBadFrameIndex([{ name: "a", matrix: IDENTITY }, { name: "a", matrix: [[1]] }]), 1);
+  });
+});
+
+describe("sanitizeObjectName", () => {
+  it("mirrors the backend rule for unsafe characters", () => {
+    assert.equal(sanitizeObjectName("my part"), "my_part");
+    assert.equal(sanitizeObjectName("  pin  "), "pin");
+    assert.equal(sanitizeObjectName(""), "part");
+  });
+  it("rewrites reserved stems like the backend", () => {
+    assert.equal(sanitizeObjectName("assembly"), "part_assembly");
+  });
+});
+
+describe("matchObjectNames", () => {
+  it("prefers exact matches (pin/bushing case)", () => {
+    assert.deepEqual(matchObjectNames(["bushing", "pin"], "bushing"), ["bushing"]);
+    assert.deepEqual(matchObjectNames(["bushing", "pin"], "pin"), ["pin"]);
+  });
+  it("falls back to the sanitize rule", () => {
+    assert.deepEqual(matchObjectNames(["my part"], "my_part"), ["my part"]);
+  });
+  it("returns empty when nothing matches", () => {
+    assert.deepEqual(matchObjectNames(["bushing", "pin"], "washer"), []);
+    assert.deepEqual(matchObjectNames([], "pin"), []);
+  });
+});
+
+describe("registerModels", () => {
+  it("registers one entry per part sharing a single multi-mesh file", () => {
+    const { models, unmapped } = registerModels(
+      [{ fileName: "assembly_model.obj", url: "blob:one" }],
+      ["bushing", "pin"]
+    );
+    assert.deepEqual(unmapped, []);
+    assert.equal(models.length, 2);
+    assert.deepEqual(models[0], {
+      fileName: "assembly_model.obj",
+      partId: "bushing",
+      url: "blob:one",
+      objectName: "bushing",
+    });
+    assert.deepEqual(models[1].objectName, "pin");
+  });
+  it("keeps whole-file entries for separate per-part uploads", () => {
+    const { models, unmapped } = registerModels(
+      [
+        { fileName: "pin.obj", url: "blob:pin" },
+        { fileName: "bushing.obj", url: "blob:bushing" },
+      ],
+      ["pin", "bushing"]
+    );
+    assert.deepEqual(unmapped, []);
+    assert.deepEqual(
+      models.map((m) => [m.partId, m.url, m.objectName]),
+      [
+        ["pin", "blob:pin", null],
+        ["bushing", "blob:bushing", null],
+      ]
+    );
+  });
+  it("never guesses when a part matches no file", () => {
+    const { models, unmapped } = registerModels(
+      [
+        { fileName: "a.obj", url: "blob:a" },
+        { fileName: "b.obj", url: "blob:b" },
+      ],
+      ["a", "zzz_unknown"]
+    );
+    assert.equal(models.length, 1);
+    assert.deepEqual(unmapped, ["zzz_unknown"]);
   });
 });
 

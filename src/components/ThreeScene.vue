@@ -70,7 +70,7 @@ import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { flattenRowMajor } from "../lib/animation";
+import { flattenRowMajor, matchObjectNames } from "../lib/animation";
 
 export interface AnimationFrame {
   /** Row-major 4x4 world transform from the planner's path.json. */
@@ -81,6 +81,8 @@ export interface PartAnimation {
   partId: string;
   modelIndex: number;
   fileName: string;
+  /** `o` sub-mesh to move inside a shared file; null = move the whole model. */
+  objectName: string | null;
   sourceArtifact: string;
   frames: AnimationFrame[];
 }
@@ -88,6 +90,24 @@ export interface PartAnimation {
 export interface ViewerModel {
   name: string;
   url: string;
+  /** `o` sub-mesh contained in this file; null = the whole file is one part. */
+  objectName: string | null;
+}
+
+export interface MeshBindInfo {
+  partId: string;
+  modelIndex: number;
+  meshCount: number;
+  objectName: string;
+  fileName: string;
+}
+
+export interface MeshMissingInfo {
+  partId: string;
+  modelIndex: number;
+  objectName: string;
+  fileName: string;
+  childrenFound: string[];
 }
 
 export type PlaybackState = "stopped" | "playing" | "paused" | "ended";
@@ -144,6 +164,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: "playback-change", s: PlaybackState): void;
+  (e: "mesh-bound", info: MeshBindInfo): void;
+  (e: "mesh-missing", info: MeshMissingInfo): void;
 }>();
 
 const containerRef = ref<HTMLDivElement | null>(null);
@@ -187,6 +209,10 @@ let lastTick = 0;
 let clockTime = 0;
 let loadToken = 0;
 const groups = new Map<number, THREE.Group>();
+/** Pose targets per model: whole group, or only the matched `o` sub-meshes. */
+const targets = new Map<number, THREE.Object3D[]>();
+/** Bind reports already emitted (per model + object) to avoid log spam. */
+const reportedBinds = new Set<string>();
 const fittedObjects: THREE.Object3D[] = [];
 let placeholder: THREE.Mesh | null = null;
 let resizeObserver: ResizeObserver | null = null;
@@ -194,18 +220,82 @@ const tmpPos = new THREE.Vector3();
 const tmpQuat = new THREE.Quaternion();
 
 function applyPose(modelIndex: number, t: number, dur: number) {
-  const g = groups.get(modelIndex);
+  const list = targets.get(modelIndex);
   const poses = posesByModel.value.get(modelIndex);
-  if (!g || !poses || poses.length === 0) return;
+  if (!list || list.length === 0 || !poses || poses.length === 0) return;
   sampleTrack(poses, t, dur, tmpPos, tmpQuat);
   // NOTE: no display scale or centering here — planner coordinates apply 1:1.
-  g.position.copy(tmpPos);
-  g.quaternion.copy(tmpQuat);
+  for (const o of list) {
+    o.position.copy(tmpPos);
+    o.quaternion.copy(tmpQuat);
+  }
 }
 
 function applyFirstFrames() {
   const dur = stepDuration.value;
-  for (const idx of groups.keys()) applyPose(idx, 0, dur);
+  for (const idx of targets.keys()) applyPose(idx, 0, dur);
+}
+
+/** Collect mesh descendants carrying an OBJ object name. */
+function namedMeshes(root: THREE.Object3D): THREE.Mesh[] {
+  const out: THREE.Mesh[] = [];
+  root.traverse((child) => {
+    if ((child as THREE.Mesh).isMesh && child.name) out.push(child as THREE.Mesh);
+  });
+  return out;
+}
+
+/**
+ * Resolve which scene objects each animation entry drives, verifying the
+ * sub-mesh actually exists. Whole-file parts drive their group; shared-file
+ * parts drive only the matching `o` children, in place (same parent chain,
+ * so planner world transforms still apply 1:1). Emits one bind/missing
+ * report per model+object; missing parts keep their assembled pose.
+ */
+function rebindTargets() {
+  targets.clear();
+  const byAnim = new Map<number, { partId: string; objectName: string | null; fileName: string }>();
+  for (const a of props.animations) {
+    if (a.frames.length > 0) byAnim.set(a.modelIndex, { partId: a.partId, objectName: a.objectName, fileName: a.fileName });
+  }
+  for (const [idx, info] of byAnim) {
+    const group = groups.get(idx);
+    if (!group) continue; // model failed to load; pose application skips it
+    if (info.objectName === null) {
+      targets.set(idx, [group]);
+      continue;
+    }
+    const meshes = namedMeshes(group);
+    const matched = meshes.filter((m) => matchObjectNames([m.name], info.objectName as string).length > 0);
+    const key = `${idx}:${info.objectName}`;
+    if (matched.length > 0) {
+      targets.set(idx, matched);
+      if (!reportedBinds.has(key)) {
+        reportedBinds.add(key);
+        emit("mesh-bound", {
+          partId: info.partId,
+          modelIndex: idx,
+          meshCount: matched.length,
+          objectName: info.objectName,
+          fileName: info.fileName,
+        });
+      }
+    } else {
+      targets.set(idx, []);
+      if (!reportedBinds.has(key)) {
+        reportedBinds.add(key);
+        const childrenFound = [...new Set(meshes.map((m) => m.name))].slice(0, 12);
+        console.error(`Sub-mesh "${info.objectName}" not found in ${info.fileName}; part stays static.`);
+        emit("mesh-missing", {
+          partId: info.partId,
+          modelIndex: idx,
+          objectName: info.objectName,
+          fileName: info.fileName,
+          childrenFound,
+        });
+      }
+    }
+  }
 }
 
 /** Frame the camera on the true (unscaled, uncentered) model bounds. */
@@ -240,6 +330,7 @@ function clearModels() {
     });
   }
   groups.clear();
+  targets.clear();
   fittedObjects.length = 0;
   updatePlaceholder();
 }
@@ -265,17 +356,30 @@ async function loadModels() {
   if (!scene) return;
   const token = ++loadToken;
   clearModels();
+  reportedBinds.clear();
   const loader = new OBJLoader();
   await Promise.all(
     props.models.map(async (m, idx) => {
       try {
         const obj = await loader.loadAsync(m.url);
         if (token !== loadToken) return; // superseded by a newer upload
+        const clone = obj.clone(true);
         const group = new THREE.Group();
-        group.add(obj.clone());
+        if (m.objectName) {
+          // Shared-file part: the group holds ONLY its own sub-meshes, so a
+          // sibling part's track can never move (or ghost-duplicate) them.
+          const matched = namedMeshes(clone).filter(
+            (mesh) => matchObjectNames([mesh.name], m.objectName as string).length > 0
+          );
+          if (matched.length > 0) matched.forEach((mesh) => group.add(mesh));
+          else group.add(clone); // sub-mesh not found: keep whole file visible, pose stays static
+        } else {
+          group.add(clone);
+        }
         scene!.add(group);
         groups.set(idx, group);
         fittedObjects.push(group);
+        rebindTargets();
         // Show the assembled (first-frame) pose immediately, matching R3F behaviour.
         applyPose(idx, 0, stepDuration.value);
         if (token === loadToken) {
@@ -300,7 +404,7 @@ function tick(now: number) {
       setState("ended");
     } else {
       const dur = stepDuration.value;
-      for (const [idx] of groups) {
+      for (const [idx] of targets) {
         const offset = (orderOf.value.get(idx) ?? 0) * dur;
         // Sequential semantics: this part moves during [timeOffset, timeOffset+stepDuration].
         const local = Math.min(Math.max(clockTime - offset, 0), dur);
@@ -386,7 +490,9 @@ watch(
 watch(
   () => props.animations,
   () => {
-    // New animation data arrives: stop and reset to the assembled pose.
+    // New animation data arrives: re-verify sub-mesh binds, then stop and
+    // reset to the assembled pose.
+    rebindTargets();
     clockTime = 0;
     setState("stopped");
     applyFirstFrames();
