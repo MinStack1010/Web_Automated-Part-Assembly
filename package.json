@@ -1,5 +1,4 @@
 {
-<<<<<<< HEAD
   "name": "3d-assembly-dashboard-vue",
   "version": "0.1.0",
   "private": true,
@@ -17,45 +16,14 @@
     "vue": "^3.5.18"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/vite": "^4",
     "@types/node": "^20.19.43",
     "@types/three": "^0.186.0",
     "@vitejs/plugin-vue": "^6",
-    "tailwindcss": "^4",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5",
     "vite": "^7",
     "vue-tsc": "^2"
-=======
-  "name": "3d-assembly-dashboard",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint",
-    "test": "node --test lib/*.test.ts"
-  },
-  "dependencies": {
-    "@react-three/drei": "^10.7.9",
-    "@react-three/fiber": "^9.8.1",
-    "axios": "^1.20.0",
-    "next": "16.3.8",
-    "npyjs": "^1.2.0",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "three": "^0.186.1",
-    "three-stdlib": "^2.36.1"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.3.8",
-    "tailwindcss": "^4",
-    "typescript": "^5"
->>>>>>> 4edfdfafff70ae649a8f11b25c16698ddc0572d4
   }
 }
