@@ -1,7 +1,7 @@
 <template>
-  <div class="flex flex-col lg:flex-row h-dvh bg-app text-inverse font-sans overflow-hidden">
+  <div class="flex flex-col md:flex-row h-dvh bg-app text-inverse font-sans overflow-hidden">
     <!-- Mobile tab switcher (desktop shows both panes side by side) -->
-    <div class="lg:hidden shrink-0 flex gap-2 p-2 bg-surface border-b border-black/10">
+    <div class="md:hidden shrink-0 flex gap-2 p-2 bg-surface border-b border-black/10">
       <button
         @click="mobileTab = 'studio'"
         :class="mobileTab === 'studio' ? 'btn-primary' : 'btn-outline border-0 text-black/50'"
@@ -24,7 +24,7 @@
     <div
       :class="[
         panelVisibility,
-        'w-full lg:w-auto lg:flex-[3_1_0%] lg:shrink-0 p-3 flex-col gap-3 bg-app lg:border-r border-black/10 overflow-y-auto lg:overflow-hidden flex-1 min-h-0',
+        'w-full md:w-auto md:flex-[3_1_0%] md:shrink-0 p-3 flex-col gap-3 bg-app md:border-r border-black/10 overflow-y-auto md:overflow-hidden flex-1 min-h-0',
       ]"
     >
       <PanelHeader :sys-status="sysStatus" :phase="phase" :playback="playback" />
@@ -62,7 +62,7 @@
     </div>
 
     <!-- Right pane: player -->
-    <div :class="[viewerVisibility, 'flex-1 min-h-0 p-2 sm:p-3 relative bg-app lg:flex-[7_1_0%]']">
+    <div :class="[viewerVisibility, 'flex-1 min-h-0 p-2 sm:p-3 relative bg-app md:flex-[7_1_0%]']">
       <div
         v-if="isPolling"
         class="absolute top-8 left-8 z-20 app-card px-4 py-2 flex items-center gap-2 text-primary animate-pulse"
@@ -121,8 +121,8 @@ const {
 
 // Active pane on small screens (desktop always shows both panes).
 const mobileTab = ref<"studio" | "player">("studio");
-const panelVisibility = computed(() => (mobileTab.value === "studio" ? "flex" : "hidden lg:flex"));
-const viewerVisibility = computed(() => (mobileTab.value === "player" ? "block" : "hidden lg:block"));
+const panelVisibility = computed(() => (mobileTab.value === "studio" ? "flex" : "hidden md:flex"));
+const viewerVisibility = computed(() => (mobileTab.value === "player" ? "block" : "hidden md:block"));
 
 // On mobile, jump straight to the player as soon as paths are ready to play.
 watch(phase, (p) => {

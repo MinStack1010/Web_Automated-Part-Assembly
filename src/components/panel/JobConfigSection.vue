@@ -15,13 +15,13 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <section class="app-card p-4 space-y-3 lg:flex lg:flex-col lg:flex-1 lg:min-h-[150px] lg:overflow-hidden">
+  <section class="app-card p-4 space-y-3 md:flex md:flex-col md:flex-1 md:min-h-[150px] md:overflow-hidden">
     <h2 class="app-label">2 · Sequence &amp; Path Planning</h2>
 
     <textarea
       :value="payloadJson"
       @input="emit('update:payloadJson', ($event.target as HTMLTextAreaElement).value)"
-      class="field mono h-40 lg:h-auto lg:flex-1 lg:min-h-[56px] resize-y !bg-[#fafafa] !text-carbon text-[12px] leading-5"
+      class="field mono h-40 md:h-auto md:flex-1 md:min-h-[56px] resize-y !bg-[#fafafa] !text-carbon text-[12px] leading-5"
       spellcheck="false"
     />
 
