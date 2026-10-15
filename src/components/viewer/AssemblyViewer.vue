@@ -1,63 +1,83 @@
 <template>
-  <div class="w-full h-full bg-gray-900 rounded-lg overflow-hidden border border-gray-700 relative">
-    <div class="absolute bottom-4 left-4 z-10 flex flex-col gap-1 max-w-[70%]">
+  <div class="w-full h-full bg-surface rounded-[10px] overflow-hidden border border-black/10 relative shadow-[0_1px_3px_rgba(0,0,0,0.12)]">
+    <!-- Playback status -->
+    <div class="absolute bottom-4 left-4 z-10 flex flex-col gap-1.5 max-w-[70%]">
       <div
         v-if="playback === 'playing'"
-        class="bg-black/60 px-3 py-1 rounded text-green-400 font-mono text-xs border border-green-500/30 flex items-center gap-2"
+        class="app-card px-3 py-1.5 flex items-center gap-2 text-success"
       >
-        <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-        PLAYING ANIMATION ({{ totalFrames }} frames, {{ animations.length }} part{{ animations.length > 1 ? "s" : "" }})
+        <span class="w-2 h-2 bg-success rounded-full animate-pulse"></span>
+        <span class="text-[11px] font-semibold uppercase tracking-wide">
+          Playing · {{ totalFrames }} steps · {{ animations.length }}
+          part{{ animations.length > 1 ? "s" : "" }}
+        </span>
       </div>
-      <div
-        v-if="playback === 'paused'"
-        class="bg-black/60 px-3 py-1 rounded text-amber-300 font-mono text-xs border border-amber-500/30"
-      >
-        PAUSED — pose held
+      <div v-else-if="playback === 'paused'" class="app-card px-3 py-1.5 text-warning">
+        <span class="text-[11px] font-semibold uppercase tracking-wide">Paused — pose held</span>
       </div>
-      <div
-        v-if="playback === 'ended'"
-        class="bg-black/60 px-3 py-1 rounded text-blue-300 font-mono text-xs border border-blue-500/30"
-      >
-        ENDED — final assembled pose held
+      <div v-else-if="playback === 'ended'" class="app-card px-3 py-1.5 text-primary">
+        <span class="text-[11px] font-semibold uppercase tracking-wide">
+          Ended — assembled pose held
+        </span>
       </div>
       <div
         v-for="a in animations"
         :key="a.partId"
-        class="bg-black/60 px-3 py-1 rounded text-gray-300 font-mono text-[11px] border border-gray-600/30"
+        class="app-card px-3 py-1 mono text-[11px] text-carbon"
       >
-        {{ a.partId }} → {{ a.fileName }} ({{ a.frames.length }} frames)
+        {{ a.partId }} <span class="text-black/40">→</span> {{ a.fileName }}
+        <span class="text-black/45">({{ a.frames.length }} steps)</span>
       </div>
     </div>
 
+    <!-- Player controls -->
     <div v-if="animations.length > 0" class="absolute top-4 left-4 z-10 flex gap-2">
       <button
         v-if="playback === 'stopped' || playback === 'ended'"
         @click="handlePlay"
-        class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 rounded text-xs font-bold"
+        class="btn btn-primary btn-sm"
       >
-        {{ playback === "ended" ? "↻ Replay" : "▶ Play" }}
+        <span class="material-icons text-[15px]">play_arrow</span>
+        {{ playback === "ended" ? "Replay" : "Play" }}
       </button>
       <button
         v-if="playback === 'playing'"
         @click="handlePause"
-        class="px-3 py-1 bg-amber-600 hover:bg-amber-500 rounded text-xs font-bold"
+        class="btn btn-warning btn-sm"
       >
-        ⏸ Pause
+        <span class="material-icons text-[15px]">pause</span>
+        Pause
       </button>
       <button
         v-if="playback === 'paused'"
         @click="handleResume"
-        class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 rounded text-xs font-bold"
+        class="btn btn-primary btn-sm"
       >
-        ▶ Resume
+        <span class="material-icons text-[15px]">play_arrow</span>
+        Resume
       </button>
       <button
         v-if="playback === 'playing' || playback === 'paused' || playback === 'ended'"
         @click="handleReset"
-        class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs font-bold"
+        class="btn btn-outline btn-sm"
       >
-        ⟲ Reset
+        <span class="material-icons text-[15px]">restart_alt</span>
+        Reset
       </button>
+    </div>
+
+    <!-- Empty stage hint (no parts loaded — stage stays grid + lights only) -->
+    <div
+      v-if="models.length === 0"
+      class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center"
+    >
+      <div class="app-card px-6 py-5 text-center space-y-1.5">
+        <span class="material-icons text-lightgrey text-3xl">view_in_ar</span>
+        <p class="text-[13px] font-semibold text-carbon">Empty stage</p>
+        <p class="text-[11px] text-black/45 max-w-[220px]">
+          Upload parts to preview the assembly sequence.
+        </p>
+      </div>
     </div>
 
     <div ref="containerRef" class="w-full h-full"></div>
@@ -68,29 +88,18 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { flattenRowMajor } from "../lib/animation";
+import { viewer } from "../../libs/3d/viewer";
+import { flattenRowMajor } from "../../lib/animation";
+import type { PartAnimation, PlaybackState, ViewerModel } from "../../lib/types";
 
-export interface AnimationFrame {
-  /** Row-major 4x4 world transform from the planner's path.json. */
-  matrix: number[][];
-}
+const props = defineProps<{
+  models: ViewerModel[];
+  animations: PartAnimation[];
+}>();
 
-export interface PartAnimation {
-  partId: string;
-  modelIndex: number;
-  fileName: string;
-  sourceArtifact: string;
-  frames: AnimationFrame[];
-}
-
-export interface ViewerModel {
-  name: string;
-  url: string;
-}
-
-export type PlaybackState = "stopped" | "playing" | "paused" | "ended";
+const emit = defineEmits<{
+  (e: "playback-change", s: PlaybackState): void;
+}>();
 
 const FRAMES_PER_SECOND = 30;
 
@@ -137,15 +146,6 @@ function sampleTrack(
   outQuat.slerpQuaternions(poses[i].quat, poses[i + 1].quat, alpha);
 }
 
-const props = defineProps<{
-  models: ViewerModel[];
-  animations: PartAnimation[];
-}>();
-
-const emit = defineEmits<{
-  (e: "playback-change", s: PlaybackState): void;
-}>();
-
 const containerRef = ref<HTMLDivElement | null>(null);
 const playback = ref<PlaybackState>("stopped");
 
@@ -177,18 +177,11 @@ function setState(s: PlaybackState) {
   emit("playback-change", s);
 }
 
-// ---- three.js imperative core ----
-let renderer: THREE.WebGLRenderer | null = null;
-let scene: THREE.Scene | null = null;
-let camera: THREE.PerspectiveCamera | null = null;
-let controls: OrbitControls | null = null;
-let rafId: number | null = null;
-let lastTick = 0;
-let clockTime = 0;
+// ---- three.js core lives in the ported client viewer singleton (src/libs/3d/viewer.ts) ----
 let loadToken = 0;
+let clockTime = 0;
 const groups = new Map<number, THREE.Group>();
 const fittedObjects: THREE.Object3D[] = [];
-let placeholder: THREE.Mesh | null = null;
 let resizeObserver: ResizeObserver | null = null;
 const tmpPos = new THREE.Vector3();
 const tmpQuat = new THREE.Quaternion();
@@ -210,7 +203,9 @@ function applyFirstFrames() {
 
 /** Frame the camera on the true (unscaled, uncentered) model bounds. */
 function fitCamera() {
-  if (!scene || !camera || !controls || fittedObjects.length === 0) return;
+  const camera = viewer.camera;
+  const controls = viewer.controls;
+  if (!camera || !controls || fittedObjects.length === 0) return;
   const box = new THREE.Box3();
   fittedObjects.forEach((o) => box.expandByObject(o));
   if (box.isEmpty()) return;
@@ -225,10 +220,23 @@ function fitCamera() {
   controls.update();
 }
 
+/** Scale the client's default 10-unit grid to the loaded assembly bounds. */
+function fitGrid() {
+  if (fittedObjects.length === 0) return;
+  const box = new THREE.Box3();
+  fittedObjects.forEach((o) => box.expandByObject(o));
+  if (box.isEmpty()) return;
+  const { x, y, z } = box.getSize(new THREE.Vector3());
+  const span = Math.max(x, y, z, 1);
+  const size = Math.pow(10, Math.ceil(Math.log10(span * 2)));
+  // ~10 grid cells across the assembly, matching the client's 10-unit / 25-division feel.
+  const divisions = Math.min(100, Math.max(10, Math.round((size / span) * 10)));
+  viewer.setGrid(size, divisions);
+}
+
 function clearModels() {
-  if (!scene) return;
   for (const [, g] of groups) {
-    scene.remove(g);
+    viewer.scene?.remove(g);
     g.traverse((child) => {
       const mesh = child as THREE.Mesh;
       if (mesh.isMesh) {
@@ -241,28 +249,10 @@ function clearModels() {
   }
   groups.clear();
   fittedObjects.length = 0;
-  updatePlaceholder();
-}
-
-function updatePlaceholder() {
-  if (!scene) return;
-  const needPlaceholder = groups.size === 0;
-  if (needPlaceholder && !placeholder) {
-    const geo = new THREE.BoxGeometry(1, 1, 1);
-    const mat = new THREE.MeshStandardMaterial({ color: "#3b82f6", wireframe: true });
-    placeholder = new THREE.Mesh(geo, mat);
-    placeholder.position.set(0, 0.5, 0);
-    scene.add(placeholder);
-  } else if (!needPlaceholder && placeholder) {
-    scene.remove(placeholder);
-    placeholder.geometry.dispose();
-    (placeholder.material as THREE.Material).dispose();
-    placeholder = null;
-  }
 }
 
 async function loadModels() {
-  if (!scene) return;
+  if (!viewer.scene) return;
   const token = ++loadToken;
   clearModels();
   const loader = new OBJLoader();
@@ -273,26 +263,23 @@ async function loadModels() {
         if (token !== loadToken) return; // superseded by a newer upload
         const group = new THREE.Group();
         group.add(obj.clone());
-        scene!.add(group);
+        viewer.scene!.add(group);
         groups.set(idx, group);
         fittedObjects.push(group);
         // Show the assembled (first-frame) pose immediately, matching R3F behaviour.
         applyPose(idx, 0, stepDuration.value);
         if (token === loadToken) {
-          updatePlaceholder();
+          fitGrid();
           fitCamera();
         }
       } catch (err) {
-        console.error(`Failed to load OBJ ${m.name}:`, err);
+        console.error(`Failed to load part ${m.name}:`, err);
       }
     })
   );
 }
 
-function tick(now: number) {
-  rafId = requestAnimationFrame(tick);
-  const dt = lastTick === 0 ? 0 : (now - lastTick) / 1000;
-  lastTick = now;
+function tick(dt: number) {
   if (playback.value === "playing") {
     clockTime += dt;
     if (clockTime >= duration.value) {
@@ -308,72 +295,30 @@ function tick(now: number) {
       }
     }
   }
-  controls?.update();
-  if (renderer && scene && camera) renderer.render(scene, camera);
 }
 
-function initThree() {
+function initViewer() {
   const container = containerRef.value;
-  if (!container) return;
-  renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(container.clientWidth, container.clientHeight);
-  container.appendChild(renderer.domElement);
-
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color("#111827");
-
-  camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 10000);
-  camera.position.set(30, 30, 30);
-
-  controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-
-  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-  const dir = new THREE.DirectionalLight(0xffffff, 1);
-  dir.position.set(10, 10, 5);
-  scene.add(dir);
-
-  // Equivalent of drei <Environment preset="city">: neutral IBL, no external HDR download needed.
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  pmrem.dispose();
-
-  const grid = new THREE.GridHelper(40, 40, 0x4b5563, 0x374151);
-  scene.add(grid);
-
-  updatePlaceholder();
+  if (!container || viewer.renderer) return;
+  viewer.initRenderer(container.clientWidth, container.clientHeight);
+  container.appendChild(viewer.renderer!.domElement);
+  viewer.initDefaultScene();
 
   resizeObserver = new ResizeObserver(() => {
-    if (!container || !renderer || !camera) return;
-    const w = container.clientWidth;
-    const h = container.clientHeight;
-    if (w === 0 || h === 0) return;
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-    renderer.setSize(w, h);
+    viewer.resize(container.clientWidth, container.clientHeight);
   });
   resizeObserver.observe(container);
 
-  lastTick = 0;
-  rafId = requestAnimationFrame(tick);
+  viewer.startLoop(tick);
   void loadModels();
 }
 
-function disposeThree() {
+function disposeViewer() {
   loadToken++;
-  if (rafId !== null) cancelAnimationFrame(rafId);
-  rafId = null;
   resizeObserver?.disconnect();
   resizeObserver = null;
   clearModels();
-  controls?.dispose();
-  controls = null;
-  renderer?.dispose();
-  renderer?.domElement.remove();
-  renderer = null;
-  scene = null;
-  camera = null;
+  viewer.dispose();
 }
 
 watch(
@@ -395,18 +340,17 @@ watch(
 );
 
 onMounted(() => {
-  initThree();
+  initViewer();
 });
 
 onBeforeUnmount(() => {
-  disposeThree();
+  disposeViewer();
 });
 
 function handlePlay() {
   if (props.animations.length === 0 || duration.value <= 0) return;
-  clockTime = 0; // (re)play from the first frame; OBJs stay loaded
+  clockTime = 0; // (re)play from the first frame; parts stay loaded
   applyFirstFrames();
-  lastTick = 0;
   setState("playing");
 }
 
@@ -415,7 +359,6 @@ function handlePause() {
 }
 
 function handleResume() {
-  lastTick = 0;
   setState("playing");
 }
 
