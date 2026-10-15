@@ -1,7 +1,8 @@
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import axios from "axios";
 import { API_BASE } from "../lib/api";
-import { stemOf, isFiniteMatrix, registerModels } from "../lib/animation";
+import { stemOf, isFiniteMatrix, registerModels, sanitizeObjectName } from "../lib/animation";
+import { extractObjectNamesFromFile } from "../lib/objParser";
 import type {
   ArtifactProgress,
   JobFailure,
@@ -61,6 +62,14 @@ export function useAssemblyJob() {
   const isPolling = ref(false);
   const pollAttempt = ref(0);
   const jobIdInput = ref<string>("");
+
+  // Submesh editing state
+  const mappingAvailable = ref(false); // True if multi-mesh file detected
+  const objectNames = ref<string[]>([]);
+  const currentFiles = ref<File[]>([]);
+  const currentPartIds = ref<string[]>([]);
+  const movePartId = ref("");
+  const currentMapping = ref<Record<string, string>>({});
   const animations = ref<PartAnimation[]>([]);
   const missingParts = ref<string[]>([]);
   const artifactProgress = ref<ArtifactProgress | null>(null);
@@ -70,7 +79,7 @@ export function useAssemblyJob() {
   let cancelled = false;
 
   const viewerModels = computed<ViewerModel[]>(() =>
-    models.value.map((m) => ({ name: m.fileName, url: m.url, objectName: m.objectName }))
+    models.value.map((m) => ({ name: m.fileName, partId: m.partId, url: m.url, objectName: m.objectName }))
   );
   const modelNames = computed(() => models.value.map((m) => m.fileName));
 
@@ -135,6 +144,11 @@ export function useAssemblyJob() {
 
     // A new upload invalidates the previous job's paths and animation.
     resetJobState();
+    mappingAvailable.value = false;
+    objectNames.value = [];
+    currentFiles.value = [];
+    currentPartIds.value = [];
+    currentMapping.value = {};
     // Entries may share one object URL (single multi-mesh file) — revoke once.
     new Set(models.value.map((m) => m.url)).forEach((u) => URL.revokeObjectURL(u));
     models.value = [];
@@ -156,12 +170,69 @@ export function useAssemblyJob() {
       // not one per filename: a single multi-mesh file yields several parts
       // sharing its URL, each bound to its own `o` sub-mesh at play time.
       const partIds: string[] = Array.isArray(data.result?.part_ids) ? data.result.part_ids : [];
+      currentPartIds.value = partIds;
+      movePartId.value = partIds[0] || "";
       const uploaded = objFiles.map((file) => {
         addLog(`[ASSEMBLY MODEL] Loaded file: ${file.name}`);
         return { fileName: file.name, url: URL.createObjectURL(file) };
       });
       const wanted = partIds.length > 0 ? partIds : uploaded.map((f) => stemOf(f.fileName));
       if (partIds.length > 0) addLog(`[ASSEMBLY MODEL] Discovered parts: ${partIds.join(", ")}`);
+
+      // Check if single file with multiple sub-meshes - prepare for editing (joint-plan only)
+      if (objFiles.length === 1 && partIds.length > 1) {
+        try {
+          const names = await extractObjectNamesFromFile(objFiles[0]);
+          if (names.length > 1) {
+            currentFiles.value = objFiles;
+            currentPartIds.value = partIds;
+            objectNames.value = names;
+            // Build initial auto-mapping
+            const autoMapping: Record<string, string> = {};
+            const unmatchedPartIds = new Set(partIds);
+            names.forEach((name) => {
+              const sanitizedName = sanitizeObjectName(name);
+              const collisionPrefix = `${sanitizedName}_`;
+              const matchedPartId =
+                (unmatchedPartIds.has(name) && name) ||
+                (unmatchedPartIds.has(sanitizedName) && sanitizedName) ||
+                [...unmatchedPartIds].find(
+                  (partId) =>
+                    partId.startsWith(collisionPrefix) &&
+                    /^\d+$/.test(partId.slice(collisionPrefix.length))
+                ) ||
+                unmatchedPartIds.values().next().value ||
+                "";
+              autoMapping[name] = matchedPartId;
+              unmatchedPartIds.delete(matchedPartId);
+            });
+            currentMapping.value = autoMapping;
+            mappingAvailable.value = true;
+            // First load with auto-mapping
+            const { models: registered, unmapped } = registerModels(uploaded, wanted, autoMapping);
+            const loaded: LoadedModel[] = registered.map((m) => ({ ...m }));
+            for (const m of loaded) {
+              addLog(
+                `[ASSEMBLY MODEL] Registered part: ${m.partId} → ${m.fileName}` +
+                  (m.objectName ? ` (sub-mesh "${m.objectName}")` : " (whole file)")
+              );
+            }
+            for (const partId of unmapped) {
+              addLog(`[ASSEMBLY MODEL] Part "${partId}" matches no uploaded file and cannot be displayed.`);
+            }
+            uploadId.value = newUploadId;
+            models.value = loaded;
+            phase.value = "ready";
+            addLog(`Upload successful. ID: ${newUploadId} (${loaded.map((m) => m.fileName).join(", ")})`);
+            addLog(`[MAPPING] Multi-mesh file detected with ${names.length} sub-meshes. Enter Joint Plan selection mode to adjust the mapping.`);
+            return;
+          }
+        } catch (err) {
+          console.error("Failed to parse OBJ:", err);
+        }
+      }
+
+      // Normal flow (no multi-mesh or parsing failed)
       const { models: registered, unmapped } = registerModels(uploaded, wanted);
       const loaded: LoadedModel[] = registered.map((m) => ({ ...m }));
       for (const m of loaded) {
@@ -196,6 +267,33 @@ export function useAssemblyJob() {
     }
   }
 
+  function applyMapping() {
+    addLog(`[MAPPING] Applying user mapping...`);
+
+    // Re-register models with new mapping
+    const uploaded = currentFiles.value.map((file) => ({
+      fileName: file.name,
+      url: URL.createObjectURL(file),
+    }));
+    const { models: registered, unmapped } = registerModels(uploaded, currentPartIds.value, currentMapping.value);
+    const loaded: LoadedModel[] = registered.map((m) => ({ ...m }));
+
+    // Revoke old URLs
+    new Set(models.value.map((m) => m.url)).forEach((u) => URL.revokeObjectURL(u));
+
+    models.value = loaded;
+    for (const m of loaded) {
+      addLog(
+        `[ASSEMBLY MODEL] Re-registered part: ${m.partId} → ${m.fileName}` +
+          (m.objectName ? ` (sub-mesh "${m.objectName}")` : " (whole file)")
+      );
+    }
+    for (const partId of unmapped) {
+      addLog(`[ASSEMBLY MODEL] Part "${partId}" matches no uploaded file and cannot be displayed.`);
+    }
+    addLog(`[MAPPING] Mapping applied successfully.`);
+  }
+
   async function handleStartJob(endpoint: "joint-plan" | "multi-plan") {
     let parsedPayload: Record<string, unknown>;
     try {
@@ -215,6 +313,10 @@ export function useAssemblyJob() {
 
     // Join-Plan and Multi-Plan always use the original uploaded assembly.
     parsedPayload.assembly = { ...((parsedPayload.assembly as object) || {}), upload_id: uploadId.value };
+    if (endpoint === "joint-plan" && movePartId.value) {
+      parsedPayload.move_id = movePartId.value;
+      parsedPayload.still_ids = currentPartIds.value.filter((partId) => partId !== movePartId.value);
+    }
     payloadJson.value = JSON.stringify(parsedPayload, null, 2);
     resetJobState();
     phase.value = "submitting";
@@ -549,5 +651,11 @@ export function useAssemblyJob() {
     handleDownloadZip,
     onMeshBound,
     onMeshMissing,
+    mappingAvailable,
+    objectNames,
+    currentPartIds,
+    movePartId,
+    currentMapping,
+    applyMapping,
   };
 }

@@ -95,12 +95,16 @@ import type { MeshBindInfo, MeshMissingInfo, PartAnimation, PlaybackState, Viewe
 const props = defineProps<{
   models: ViewerModel[];
   animations: PartAnimation[];
+  selectedPartId?: string;
   onMeshBound?: (info: MeshBindInfo) => void;
   onMeshMissing?: (info: MeshMissingInfo) => void;
+  allowMeshSelection?: boolean;
+  selectionResetKey?: number;
 }>();
 
 const emit = defineEmits<{
   (e: "playback-change", s: PlaybackState): void;
+  (e: "mesh-selected", objectName: string, partId: string, screenX: number, screenY: number): void;
 }>();
 
 const FRAMES_PER_SECOND = 30;
@@ -188,6 +192,15 @@ let resizeObserver: ResizeObserver | null = null;
 const tmpPos = new THREE.Vector3();
 const tmpQuat = new THREE.Quaternion();
 
+// Raycasting for mesh selection
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const highlightedMesh = ref<THREE.Mesh | null>(null);
+const highlightedObjectName = ref("");
+const highlightedPartId = ref("");
+const originalMaterial = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
+let selectionPointerStart: { x: number; y: number } | null = null;
+
 function applyPose(modelIndex: number, t: number, dur: number) {
   const g = groups.get(modelIndex);
   const poses = posesByModel.value.get(modelIndex);
@@ -237,6 +250,7 @@ function fitGrid() {
 }
 
 function clearModels() {
+  clearHighlight();
   for (const [, g] of groups) {
     viewer.scene?.remove(g);
     g.traverse((child) => {
@@ -250,12 +264,14 @@ function clearModels() {
     });
   }
   groups.clear();
+  originalMaterial.clear();
   fittedObjects.length = 0;
 }
 
 async function loadModels() {
   if (!viewer.scene) return;
   const token = ++loadToken;
+  clearHighlight();
   clearModels();
   const loader = new OBJLoader();
   await Promise.all(
@@ -308,6 +324,7 @@ async function loadModels() {
       }
     })
   );
+  if (props.selectedPartId) highlightPart(props.selectedPartId);
 }
 
 function tick(dt: number) {
@@ -340,15 +357,131 @@ function initViewer() {
   });
   resizeObserver.observe(container);
 
+  // Add click handler for mesh selection
+  container.addEventListener("pointerdown", onSelectionPointerDown);
+  container.addEventListener("click", onCanvasClick);
+
   viewer.startLoop(tick);
   void loadModels();
+}
+
+function onSelectionPointerDown(event: PointerEvent) {
+  selectionPointerStart = { x: event.clientX, y: event.clientY };
+}
+
+function onCanvasClick(event: MouseEvent) {
+  if (!props.allowMeshSelection) return;
+  if (selectionPointerStart) {
+    const moved = Math.hypot(event.clientX - selectionPointerStart.x, event.clientY - selectionPointerStart.y);
+    selectionPointerStart = null;
+    if (moved > 5) return;
+  }
+
+  const container = containerRef.value;
+  if (!container || !viewer.camera) return;
+
+  const rect = container.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, viewer.camera);
+
+  const meshes: THREE.Mesh[] = [];
+  groups.forEach((group) => {
+    group.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        meshes.push(child as THREE.Mesh);
+      }
+    });
+  });
+
+  const intersects = raycaster.intersectObjects(meshes, false);
+
+  if (intersects.length > 0) {
+    const clickedMesh = intersects[0].object as THREE.Mesh;
+    const hitModel = [...groups.entries()].find(([, group]) => {
+      let ancestor: THREE.Object3D | null = clickedMesh;
+      while (ancestor && ancestor !== group) ancestor = ancestor.parent;
+      return ancestor === group;
+    });
+    const model = hitModel ? props.models[hitModel[0]] : null;
+    if (!model) return;
+
+    if (highlightedPartId.value === model.partId) {
+      clearHighlight();
+      emit("mesh-selected", "", "", event.clientX, event.clientY);
+      return;
+    }
+
+    highlightMesh(clickedMesh);
+    highlightedObjectName.value = model.objectName || model.name;
+    highlightedPartId.value = model.partId;
+    emit("mesh-selected", highlightedObjectName.value, model.partId, event.clientX, event.clientY);
+  } else {
+    clearHighlight();
+    emit("mesh-selected", "", "", event.clientX, event.clientY);
+  }
+}
+
+function highlightMesh(mesh: THREE.Mesh) {
+  // Clear previous highlight
+  clearHighlight();
+
+  // Store original material
+  if (!originalMaterial.has(mesh)) {
+    originalMaterial.set(mesh, mesh.material);
+  }
+
+  // Apply highlight material
+  const highlightMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true });
+  mesh.material = highlightMat;
+  highlightedMesh.value = mesh;
+}
+
+function clearHighlight() {
+  highlightedObjectName.value = "";
+  highlightedPartId.value = "";
+  for (const [mesh, original] of originalMaterial) {
+    const current = mesh.material;
+    if (current !== original) {
+      if (Array.isArray(current)) current.forEach((material) => material.dispose());
+      else current.dispose();
+    }
+    mesh.material = original;
+  }
+  highlightedMesh.value = null;
+}
+
+function highlightPart(partId: string) {
+  if (!partId) {
+    clearHighlight();
+    return;
+  }
+  const modelIndex = props.models.findIndex((model) => model.partId === partId);
+  const group = groups.get(modelIndex);
+  if (!group) return;
+  let mesh: THREE.Mesh | null = null;
+  group.traverse((child) => {
+    if (!mesh && (child as THREE.Mesh).isMesh) mesh = child as THREE.Mesh;
+  });
+  if (mesh) {
+    highlightMesh(mesh);
+    highlightedObjectName.value = props.models[modelIndex].objectName || props.models[modelIndex].name;
+    highlightedPartId.value = partId;
+  }
 }
 
 function disposeViewer() {
   loadToken++;
   resizeObserver?.disconnect();
   resizeObserver = null;
+  const container = containerRef.value;
+  if (container) {
+    container.removeEventListener("pointerdown", onSelectionPointerDown);
+    container.removeEventListener("click", onCanvasClick);
+  }
   clearModels();
+  clearHighlight();
   viewer.dispose();
 }
 
@@ -357,6 +490,26 @@ watch(
   () => {
     void loadModels();
   }
+);
+
+watch(
+  () => props.allowMeshSelection,
+  (allowed) => {
+    if (!allowed) clearHighlight();
+  }
+);
+
+watch(
+  () => props.selectionResetKey,
+  () => {
+    clearHighlight();
+    highlightedObjectName.value = "";
+  }
+);
+
+watch(
+  () => props.selectedPartId,
+  (partId) => highlightPart(partId || "")
 );
 
 watch(

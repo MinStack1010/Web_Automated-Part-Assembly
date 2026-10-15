@@ -80,7 +80,8 @@ export interface RegisteredModel {
  */
 export function registerModels(
   files: UploadedFile[],
-  partIds: string[]
+  partIds: string[],
+  userMapping?: Record<string, string>
 ): { models: RegisteredModel[]; unmapped: string[] } {
   const byStem = new Map<string, UploadedFile>();
   for (const f of files) {
@@ -90,7 +91,27 @@ export function registerModels(
   const singleFile = files.length === 1 ? files[0] : null;
   const models: RegisteredModel[] = [];
   const unmapped: string[] = [];
+
+  // If user mapping is provided, build reverse lookup: partId -> objectName
+  const reverseMapping = userMapping
+    ? new Map<string, string>()
+    : null;
+  if (userMapping && reverseMapping) {
+    for (const [objectName, partId] of Object.entries(userMapping)) {
+      reverseMapping.set(partId, objectName);
+    }
+  }
+
   for (const partId of partIds) {
+    // Check user mapping first
+    if (reverseMapping && reverseMapping.has(partId)) {
+      const objectName = reverseMapping.get(partId)!;
+      if (singleFile) {
+        models.push({ fileName: singleFile.fileName, partId, url: singleFile.url, objectName });
+        continue;
+      }
+    }
+
     const direct = byStem.get(partId);
     if (direct) {
       models.push({ fileName: direct.fileName, partId, url: direct.url, objectName: null });

@@ -10,10 +10,14 @@ export default defineConfig({
     port: 3000,
     proxy: {
       "/backend": {
-        target: "https://automated-part-assembly-911218714377.asia-southeast1.run.app",
+        target: "http://localhost:8000",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/backend/, ""),
         timeout: 120000,
+      },
+      "/health": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
       },
     },
   },

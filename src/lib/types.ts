@@ -46,6 +46,7 @@ export interface PartAnimation {
 
 export interface ViewerModel {
   name: string;
+  partId: string;
   url: string;
   /** `o` sub-mesh contained in this file; null = the whole file is one part. */
   objectName: string | null;
