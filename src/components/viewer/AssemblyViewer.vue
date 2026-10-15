@@ -30,40 +30,15 @@
       </div>
     </div>
 
-    <!-- Player controls -->
-    <div v-if="animations.length > 0" class="absolute top-4 left-4 z-10 flex gap-2">
-      <button
-        v-if="playback === 'stopped' || playback === 'ended'"
-        @click="handlePlay"
-        class="btn btn-primary btn-sm"
-      >
-        <span class="material-icons text-[15px]">play_arrow</span>
-        {{ playback === "ended" ? "Replay" : "Play" }}
+    <!-- Playback is intentionally unavailable in this release. -->
+    <div class="absolute top-4 left-4 z-10 flex max-w-[min(34rem,calc(100%-2rem))] items-start gap-3 app-card p-3">
+      <button disabled class="btn btn-outline btn-sm shrink-0 cursor-not-allowed opacity-60">
+        <span class="material-icons text-[15px]">lock</span>
+        Play
       </button>
-      <button
-        v-if="playback === 'playing'"
-        @click="handlePause"
-        class="btn btn-warning btn-sm"
-      >
-        <span class="material-icons text-[15px]">pause</span>
-        Pause
-      </button>
-      <button
-        v-if="playback === 'paused'"
-        @click="handleResume"
-        class="btn btn-primary btn-sm"
-      >
-        <span class="material-icons text-[15px]">play_arrow</span>
-        Resume
-      </button>
-      <button
-        v-if="playback === 'playing' || playback === 'paused' || playback === 'ended'"
-        @click="handleReset"
-        class="btn btn-outline btn-sm"
-      >
-        <span class="material-icons text-[15px]">restart_alt</span>
-        Reset
-      </button>
+      <p class="text-[11px] leading-relaxed text-black/60">
+        Work in progress — animation feature is not ready yet. Please wait until the next version of the app.
+      </p>
     </div>
 
     <!-- Empty stage hint (no parts loaded — stage stays grid + lights only) -->
@@ -209,11 +184,6 @@ function applyPose(modelIndex: number, t: number, dur: number) {
   // NOTE: no display scale or centering here — planner coordinates apply 1:1.
   g.position.copy(tmpPos);
   g.quaternion.copy(tmpQuat);
-}
-
-function applyFirstFrames() {
-  const dur = stepDuration.value;
-  for (const idx of groups.keys()) applyPose(idx, 0, dur);
 }
 
 /** Frame the camera on the true (unscaled, uncentered) model bounds. */
@@ -515,10 +485,8 @@ watch(
 watch(
   () => props.animations,
   () => {
-    // New animation data arrives: stop and reset to the assembled pose.
     clockTime = 0;
     setState("stopped");
-    applyFirstFrames();
   },
   { deep: true }
 );
@@ -531,24 +499,4 @@ onBeforeUnmount(() => {
   disposeViewer();
 });
 
-function handlePlay() {
-  if (props.animations.length === 0 || duration.value <= 0) return;
-  clockTime = 0; // (re)play from the first frame; parts stay loaded
-  applyFirstFrames();
-  setState("playing");
-}
-
-function handlePause() {
-  setState("paused");
-}
-
-function handleResume() {
-  setState("playing");
-}
-
-function handleReset() {
-  clockTime = 0;
-  applyFirstFrames();
-  setState("stopped");
-}
 </script>

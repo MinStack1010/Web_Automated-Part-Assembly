@@ -24,7 +24,7 @@
     <div
       :class="[
         panelVisibility,
-        'w-full md:w-auto md:flex-[3_1_0%] md:shrink-0 p-3 flex-col gap-3 bg-app md:border-r border-black/10 overflow-y-auto md:overflow-hidden flex-1 min-h-0',
+        'w-full md:w-auto md:flex-[3_1_0%] md:shrink-0 p-3 flex-col gap-3 bg-app md:border-r border-black/10 overflow-y-auto flex-1 min-h-0',
       ]"
     >
       <PanelHeader :sys-status="sysStatus" :phase="phase" :playback="playback" />
@@ -49,26 +49,12 @@
 
       <JobFailureCard v-if="jobFailure" :job-failure="jobFailure" />
 
-      <AnimationPathsCard
-        v-if="artifactProgress || animations.length > 0 || missingParts.length > 0"
-        :artifact-progress="artifactProgress"
-        :animations="animations"
-        :missing-parts="missingParts"
-      />
+      <AnimationJsonCard :animations="animations" />
 
     </div>
 
     <!-- Right pane: player -->
     <div :class="[viewerVisibility, 'flex-1 min-h-0 p-2 sm:p-3 relative bg-app md:flex-[7_1_0%]']">
-      <div
-        v-if="isPolling"
-        class="absolute top-8 left-8 z-20 app-card px-4 py-2 flex items-center gap-2 text-primary animate-pulse"
-      >
-        <span class="material-icons text-[16px]">progress_activity</span>
-        <span class="text-[12px] font-semibold uppercase tracking-wide">
-          Planning path… ({{ pollAttempt }})
-        </span>
-      </div>
       <AssemblyViewer
         :models="viewerModels"
         :animations="animations"
@@ -91,7 +77,7 @@ import PanelHeader from "./components/panel/PanelHeader.vue";
 import UploadSection from "./components/panel/UploadSection.vue";
 import JobConfigSection from "./components/panel/JobConfigSection.vue";
 import JobFailureCard from "./components/panel/JobFailureCard.vue";
-import AnimationPathsCard from "./components/panel/AnimationPathsCard.vue";
+import AnimationJsonCard from "./components/panel/AnimationJsonCard.vue";
 import AssemblyViewer from "./components/viewer/AssemblyViewer.vue";
 import { useAssemblyJob } from "./composables/useAssemblyJob";
 
@@ -108,8 +94,6 @@ const {
   isPolling,
   pollAttempt,
   animations,
-  missingParts,
-  artifactProgress,
   jobFailure,
   handleUpload,
   handleStartJob,

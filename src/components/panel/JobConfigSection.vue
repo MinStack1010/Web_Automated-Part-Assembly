@@ -25,17 +25,20 @@ const emit = defineEmits<{
       <button
         @click="emit('joint-plan-mode')"
         :disabled="isPolling || !uploadId"
-        :class="jointPlanMode ? 'btn-primary' : 'btn-outline'"
-        class="btn flex-1"
+        title="Joint Plan: creates a movement path for the selected part so it can be assembled with the rest of the model."
+        aria-label="Joint Plan: plan movement for the selected part"
+        class="btn btn-primary flex-1"
       >
-        {{ jointPlanMode ? "Selecting meshes…" : "Joint Plan" }}
+        {{ jointPlanMode ? "Selecting meshes…" : isPolling && jobOperation === "joint-plan" ? `Planning… ${pollAttempt}` : "Joint Plan" }}
       </button>
       <button
         @click="emit('start-job', 'multi-plan')"
         :disabled="isPolling || !uploadId"
+        title="Multi Plan: automatically creates movement paths for multiple parts in assembly order."
+        aria-label="Multi Plan: plan movement for multiple parts"
         class="btn btn-primary flex-1"
       >
-        {{ isPolling ? `Planning… ${pollAttempt}` : "Multi Plan" }}
+        {{ isPolling && jobOperation === "multi-plan" ? `Planning… ${pollAttempt}` : "Multi Plan" }}
       </button>
     </div>
 
