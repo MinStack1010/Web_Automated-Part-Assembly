@@ -90,11 +90,13 @@ import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { viewer } from "../../libs/3d/viewer";
 import { flattenRowMajor } from "../../lib/animation";
-import type { PartAnimation, PlaybackState, ViewerModel } from "../../lib/types";
+import type { MeshBindInfo, MeshMissingInfo, PartAnimation, PlaybackState, ViewerModel } from "../../lib/types";
 
 const props = defineProps<{
   models: ViewerModel[];
   animations: PartAnimation[];
+  onMeshBound?: (info: MeshBindInfo) => void;
+  onMeshMissing?: (info: MeshMissingInfo) => void;
 }>();
 
 const emit = defineEmits<{
@@ -262,7 +264,36 @@ async function loadModels() {
         const obj = await loader.loadAsync(m.url);
         if (token !== loadToken) return; // superseded by a newer upload
         const group = new THREE.Group();
-        group.add(obj.clone());
+        let target: THREE.Object3D | null = null;
+        if (m.objectName) {
+          // Bind the specific sub-mesh (`o` name) instead of the whole model.
+          target = obj.getObjectByName(m.objectName) ?? null;
+          if (target) {
+            group.add(target.clone());
+            const meshCount = (target as THREE.Mesh).isMesh ? 1 : (target.children?.filter((c) => (c as THREE.Mesh).isMesh).length ?? 0);
+            props.onMeshBound?.({
+              partId: m.name,
+              modelIndex: idx,
+              meshCount,
+              objectName: m.objectName,
+              fileName: m.name,
+            });
+          } else {
+            const childNames = obj.children.map((c) => c.name).filter(Boolean);
+            props.onMeshMissing?.({
+              partId: m.name,
+              modelIndex: idx,
+              objectName: m.objectName,
+              fileName: m.name,
+              childrenFound: childNames,
+            });
+            // Fall back to the whole model so the part stays visible (static).
+            group.add(obj.clone());
+          }
+        } else {
+          // No sub-mesh: move the whole model.
+          group.add(obj.clone());
+        }
         viewer.scene!.add(group);
         groups.set(idx, group);
         fittedObjects.push(group);

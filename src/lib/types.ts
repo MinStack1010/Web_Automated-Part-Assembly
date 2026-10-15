@@ -38,6 +38,8 @@ export interface PartAnimation {
   partId: string;
   modelIndex: number;
   fileName: string;
+  /** `o` sub-mesh to move inside a shared file; null = move the whole model. */
+  objectName: string | null;
   sourceArtifact: string;
   frames: AnimationFrame[];
 }
@@ -45,13 +47,33 @@ export interface PartAnimation {
 export interface ViewerModel {
   name: string;
   url: string;
+  /** `o` sub-mesh contained in this file; null = the whole file is one part. */
+  objectName: string | null;
 }
 
 export interface LoadedModel {
   fileName: string;
-  /** filename stem, e.g. "03_top_platform" */
+  /** backend part id (upload response), e.g. "03_top_platform" */
   partId: string;
   url: string;
+  /** `o` sub-mesh contained in this file; null = the whole file is one part. */
+  objectName: string | null;
+}
+
+export interface MeshBindInfo {
+  partId: string;
+  modelIndex: number;
+  meshCount: number;
+  objectName: string;
+  fileName: string;
+}
+
+export interface MeshMissingInfo {
+  partId: string;
+  modelIndex: number;
+  objectName: string;
+  fileName: string;
+  childrenFound: string[];
 }
 
 export interface JobFailure {

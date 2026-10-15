@@ -1,11 +1,13 @@
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import axios from "axios";
 import { API_BASE } from "../lib/api";
-import { stemOf, isFiniteMatrix } from "../lib/animation";
+import { stemOf, isFiniteMatrix, registerModels } from "../lib/animation";
 import type {
   ArtifactProgress,
   JobFailure,
   LoadedModel,
+  MeshBindInfo,
+  MeshMissingInfo,
   PartAnimation,
   Phase,
   PlaybackState,
@@ -68,7 +70,7 @@ export function useAssemblyJob() {
   let cancelled = false;
 
   const viewerModels = computed<ViewerModel[]>(() =>
-    models.value.map((m) => ({ name: m.fileName, url: m.url }))
+    models.value.map((m) => ({ name: m.fileName, url: m.url, objectName: m.objectName }))
   );
   const modelNames = computed(() => models.value.map((m) => m.fileName));
 
@@ -97,8 +99,8 @@ export function useAssemblyJob() {
   onBeforeUnmount(() => {
     cancelled = true;
     if (pollTimer) clearTimeout(pollTimer);
-    // Release browser object URLs.
-    models.value.forEach((m) => URL.revokeObjectURL(m.url));
+    // Release browser object URLs (entries may share one URL for a multi-mesh file).
+    new Set(models.value.map((m) => m.url)).forEach((u) => URL.revokeObjectURL(u));
     models.value = [];
   });
 
@@ -126,14 +128,15 @@ export function useAssemblyJob() {
       return;
     }
     const objFiles = files.filter((f) => f.name.toLowerCase().endsWith(".obj"));
-    if (objFiles.length < 2) {
-      addLog(`Upload needs at least two .obj parts (got ${objFiles.length}).`);
+    if (objFiles.length < 1) {
+      addLog(`No .obj file selected (got ${files.length} file(s), none with a .obj extension).`);
       return;
     }
 
     // A new upload invalidates the previous job's paths and animation.
     resetJobState();
-    models.value.forEach((m) => URL.revokeObjectURL(m.url));
+    // Entries may share one object URL (single multi-mesh file) — revoke once.
+    new Set(models.value.map((m) => m.url)).forEach((u) => URL.revokeObjectURL(u));
     models.value = [];
 
     const formData = new FormData();
@@ -149,11 +152,27 @@ export function useAssemblyJob() {
       const newUploadId: string | undefined = data.result?.source?.upload_id || data.upload_id;
       if (!newUploadId) throw new Error("Could not find upload_id in upload response");
 
-      const loaded: LoadedModel[] = objFiles.map((file) => ({
-        fileName: file.name,
-        partId: stemOf(file.name),
-        url: URL.createObjectURL(file),
-      }));
+      // Register one viewer model per BACKEND part id (upload response),
+      // not one per filename: a single multi-mesh file yields several parts
+      // sharing its URL, each bound to its own `o` sub-mesh at play time.
+      const partIds: string[] = Array.isArray(data.result?.part_ids) ? data.result.part_ids : [];
+      const uploaded = objFiles.map((file) => {
+        addLog(`[ASSEMBLY MODEL] Loaded file: ${file.name}`);
+        return { fileName: file.name, url: URL.createObjectURL(file) };
+      });
+      const wanted = partIds.length > 0 ? partIds : uploaded.map((f) => stemOf(f.fileName));
+      if (partIds.length > 0) addLog(`[ASSEMBLY MODEL] Discovered parts: ${partIds.join(", ")}`);
+      const { models: registered, unmapped } = registerModels(uploaded, wanted);
+      const loaded: LoadedModel[] = registered.map((m) => ({ ...m }));
+      for (const m of loaded) {
+        addLog(
+          `[ASSEMBLY MODEL] Registered part: ${m.partId} → ${m.fileName}` +
+            (m.objectName ? ` (sub-mesh "${m.objectName}")` : " (whole file)")
+        );
+      }
+      for (const partId of unmapped) {
+        addLog(`[ASSEMBLY MODEL] Part "${partId}" matches no uploaded file and cannot be displayed.`);
+      }
       uploadId.value = newUploadId;
       models.value = loaded;
       phase.value = "ready";
@@ -367,26 +386,33 @@ export function useAssemblyJob() {
         return;
       }
 
-      // Map each step's move_id to the uploaded model by OBJ filename stem.
-      // Upload order is NOT assumed to match planner order.
-      const byStem = new Map<string, number>();
+      // Map each step's move_id to the registered model by backend part id.
+      // Upload order is NOT assumed to match planner order, and a part id is
+      // never derived from a filename here: models already carry backend ids.
+      addLog(`[ANIMATION] Result part IDs: ${manifest.steps.map((s: { move_id: unknown }) => String(s.move_id)).join(", ")}`);
+      const byPartId = new Map<string, number>();
       models.value.forEach((m, idx) => {
-        if (!byStem.has(m.partId)) byStem.set(m.partId, idx);
+        if (!byPartId.has(m.partId)) byPartId.set(m.partId, idx);
       });
 
       phase.value = "loading-artifacts";
       const total = manifest.steps.length;
       const loadedAnims: PartAnimation[] = [];
       const missing: string[] = [];
+      let validPaths = 0;
       for (let i = 0; i < total; i++) {
         const step = manifest.steps[i];
         artifactProgress.value = { done: i, total, current: step.artifact };
-        const modelIndex = byStem.get(String(step.move_id));
+        const modelIndex = byPartId.get(String(step.move_id));
         if (modelIndex === undefined) {
           missing.push(`${step.move_id} (artifact ${step.artifact})`);
           addLog(`No uploaded model matches part "${step.move_id}" — skipping its path.`);
           continue;
         }
+        addLog(
+          `[ANIMATION] Matched path to mesh: ${step.move_id} → ${models.value[modelIndex].fileName}` +
+            (models.value[modelIndex].objectName ? ` (sub-mesh "${models.value[modelIndex].objectName}")` : "")
+        );
         const frames = await fetchStepFrames(step);
         if (!frames || frames.length === 0) {
           missing.push(`${step.move_id} (artifact ${step.artifact}: unreadable)`);
@@ -402,12 +428,15 @@ export function useAssemblyJob() {
           partId: String(step.move_id),
           modelIndex,
           fileName: models.value[modelIndex].fileName,
+          objectName: models.value[modelIndex].objectName,
           sourceArtifact: String(step.artifact),
           frames: frames.map((f) => ({ matrix: f.matrix })),
         });
+        validPaths++;
         addLog(`Decoded ${frames.length} frames for "${step.move_id}" from ${step.artifact}.`);
       }
       artifactProgress.value = { done: total, total, current: "done" };
+      addLog(`[ANIMATION] Valid paths: ${validPaths}/${total}`);
 
       if (loadedAnims.length === 0) {
         phase.value = "no-path";
@@ -472,6 +501,20 @@ export function useAssemblyJob() {
     }
   }
 
+  /** Viewer confirmed a sub-mesh bind (one log per model+object). */
+  function onMeshBound(info: MeshBindInfo) {
+    addLog(
+      `[ANIMATION] Mesh bound: ${info.partId} → ${info.meshCount} mesh(es) "${info.objectName}" in ${info.fileName}`
+    );
+  }
+
+  /** Viewer could not find the sub-mesh; that part stays static. */
+  function onMeshMissing(info: MeshMissingInfo) {
+    addLog(
+      `[ANIMATION] ${info.partId} (sub-mesh "${info.objectName}" not found in ${info.fileName}; objects: ${info.childrenFound.join(", ") || "none"})`
+    );
+  }
+
   function handleDownloadZip() {
     if (!jobIdInput.value) return addLog("Task ID is required to download the ZIP.");
     window.open(`${API_BASE}/api/v1/jobs/${jobIdInput.value}/artifacts.zip`, "_blank");
@@ -504,5 +547,7 @@ export function useAssemblyJob() {
     handleGetResult,
     handleCancelJob,
     handleDownloadZip,
+    onMeshBound,
+    onMeshMissing,
   };
 }

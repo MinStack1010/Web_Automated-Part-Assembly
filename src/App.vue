@@ -75,6 +75,8 @@
       <AssemblyViewer
         :models="viewerModels"
         :animations="animations"
+        :on-mesh-bound="onMeshBound"
+        :on-mesh-missing="onMeshMissing"
         @playback-change="playback = $event"
       />
     </div>
@@ -117,6 +119,8 @@ const {
   handleGetResult,
   handleCancelJob,
   handleDownloadZip,
+  onMeshBound,
+  onMeshMissing,
 } = useAssemblyJob();
 
 // Active pane on small screens (desktop always shows both panes).
