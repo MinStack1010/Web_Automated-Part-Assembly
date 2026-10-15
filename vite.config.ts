@@ -15,6 +15,10 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/backend/, ""),
         timeout: 120000,
       },
+      "/health": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
     },
   },
   preview: {
