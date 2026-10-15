@@ -135,6 +135,14 @@ body {
     background: #6f88f0;
   }
 
+  .btn-upload {
+    background: #009398;
+    color: #fff;
+  }
+  .btn-upload:hover:not(:disabled) {
+    background: #007a7e;
+  }
+
   .btn-warning {
     background: var(--color-warning);
     color: #fff;

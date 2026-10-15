@@ -138,7 +138,7 @@ const canUpload = computed(() => staged.value.length > 0 && props.phase !== "upl
       </li>
     </ul>
 
-    <button class="btn btn-secondary w-full" :disabled="!canUpload" @click="onUpload">
+    <button class="btn btn-upload w-full" :disabled="!canUpload" @click="onUpload">
       <span class="material-icons text-[16px]">upload</span>
       {{ phase === "uploading" ? "Uploading…" : `Upload Parts${staged.length ? ` (${staged.length})` : ""}` }}
     </button>
