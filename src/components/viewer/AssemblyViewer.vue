@@ -83,6 +83,8 @@ const emit = defineEmits<{
 }>();
 
 const FRAMES_PER_SECOND = 30;
+/** Tiny lift so the model's bottom face isn't exactly coplanar with the grid lines (display-only). */
+const FLOOR_EPSILON = 1e-3;
 
 interface DecodedPose {
   pos: THREE.Vector3;
@@ -163,6 +165,9 @@ let loadToken = 0;
 let clockTime = 0;
 const groups = new Map<number, THREE.Group>();
 const fittedObjects: THREE.Object3D[] = [];
+// Every model group hangs off one root so the y=0 floor alignment is a single rigid translate
+// (display-only: never sent to the API, never baked into geometry).
+let assemblyRoot: THREE.Group | null = null;
 let resizeObserver: ResizeObserver | null = null;
 const tmpPos = new THREE.Vector3();
 const tmpQuat = new THREE.Quaternion();
@@ -182,8 +187,28 @@ function applyPose(modelIndex: number, t: number, dur: number) {
   if (!g || !poses || poses.length === 0) return;
   sampleTrack(poses, t, dur, tmpPos, tmpQuat);
   // NOTE: no display scale or centering here — planner coordinates apply 1:1.
+  // The y=0 floor lift lives on assemblyRoot (see alignToFloor), not on this group.
   g.position.copy(tmpPos);
   g.quaternion.copy(tmpQuat);
+}
+
+/**
+ * Lift the whole assembly so its lowest geometry rests on the y=0 grid.
+ * Single rigid translate on assemblyRoot computed from the combined Box3 of all
+ * loaded parts (all child meshes included via expandByObject). Display-only:
+ * no geometry/scale change, planner poses stay 1:1 inside the root, and the
+ * grid itself is never moved or exported.
+ */
+function alignToFloor() {
+  if (!assemblyRoot || fittedObjects.length === 0) return;
+  // Idempotent: measure from the un-lifted frame so repeated calls don't stack.
+  assemblyRoot.position.y = 0;
+  assemblyRoot.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  fittedObjects.forEach((o) => box.expandByObject(o));
+  if (box.isEmpty()) return;
+  assemblyRoot.position.y = -box.min.y + FLOOR_EPSILON;
+  assemblyRoot.updateMatrixWorld(true);
 }
 
 /** Frame the camera on the true (unscaled, uncentered) model bounds. */
@@ -222,7 +247,7 @@ function fitGrid() {
 function clearModels() {
   clearHighlight();
   for (const [, g] of groups) {
-    viewer.scene?.remove(g);
+    assemblyRoot?.remove(g);
     g.traverse((child) => {
       const mesh = child as THREE.Mesh;
       if (mesh.isMesh) {
@@ -236,6 +261,7 @@ function clearModels() {
   groups.clear();
   originalMaterial.clear();
   fittedObjects.length = 0;
+  if (assemblyRoot) assemblyRoot.position.y = 0;
 }
 
 async function loadModels() {
@@ -243,6 +269,11 @@ async function loadModels() {
   const token = ++loadToken;
   clearHighlight();
   clearModels();
+  if (!assemblyRoot) {
+    assemblyRoot = new THREE.Group();
+    assemblyRoot.name = "AssemblyRoot";
+    viewer.scene.add(assemblyRoot);
+  }
   const loader = new OBJLoader();
   await Promise.all(
     props.models.map(async (m, idx) => {
@@ -280,20 +311,21 @@ async function loadModels() {
           // No sub-mesh: move the whole model.
           group.add(obj.clone());
         }
-        viewer.scene!.add(group);
+        assemblyRoot!.add(group);
         groups.set(idx, group);
         fittedObjects.push(group);
         // Show the assembled (first-frame) pose immediately, matching R3F behaviour.
         applyPose(idx, 0, stepDuration.value);
-        if (token === loadToken) {
-          fitGrid();
-          fitCamera();
-        }
       } catch (err) {
         console.error(`Failed to load part ${m.name}:`, err);
       }
     })
   );
+  if (token !== loadToken) return;
+  // Rest the assembled model on the y=0 grid, then frame the camera/grid on the lifted bounds.
+  alignToFloor();
+  fitGrid();
+  fitCamera();
   if (props.selectedPartId) highlightPart(props.selectedPartId);
 }
 
