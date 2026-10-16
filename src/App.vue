@@ -39,12 +39,16 @@
         :job-operation="jobOperation"
         :joint-plan-mode="jointPlanMode"
         :part-options="movePartOptions"
-        :selected-mesh-name="selectedObjectName"
         :move-part-id="movePartId"
-        @update:move-part-id="handleMovePartChange"
-        @reset-selection="clearMeshSelection(true)"
+        :selected-mesh-name="selectedObjectName"
+        :payload-config="payloadConfig"       
+        :show-advanced-config="showAdvancedConfig" 
         @start-job="onStartJob"
         @joint-plan-mode="onJointPlanClick"
+        @update:move-part-id="handleMovePartChange"
+        @reset-selection="clearMeshSelection(true)"
+        @toggle-advanced-config="showAdvancedConfig = !showAdvancedConfig"
+        @cancel-current-job="handleCancelCurrentJob"
       />
 
       <JobFailureCard v-if="jobFailure" :job-failure="jobFailure" />
@@ -101,6 +105,9 @@ const {
   onMeshMissing,
   currentPartIds,
   movePartId,
+  payloadConfig,      
+  showAdvancedConfig,
+  handleCancelCurrentJob
 } = useAssemblyJob();
 
 // Track if Joint Plan mode is selected (for enabling mesh selection)

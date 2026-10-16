@@ -1,4 +1,4 @@
-import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import axios from "axios";
 import { API_BASE } from "../lib/api";
 import { stemOf, isFiniteMatrix, registerModels, sanitizeObjectName } from "../lib/animation";
@@ -16,14 +16,30 @@ import type {
 } from "../lib/types";
 
 const POLL_INTERVAL_MS = 3000;
-const MAX_POLL_ATTEMPTS = 400; // ~20 min, covers long physics jobs
+const MAX_POLL_ATTEMPTS = 400;
 
-const DEFAULT_PAYLOAD = {
-  assembly: {
-    collection: null,
-    assembly_id: null,
-    upload_id: "",
-  },
+export interface AssemblyPayloadConfig {
+  engine: string;
+  sequence_planner: string;
+  path_planner: string;
+  rotation: boolean;
+  body_type: string;
+  sdf_dx: number;
+  sequence_max_time: number;
+  path_max_time: number;
+  seed: number;
+  save_artifacts: boolean;
+  n_save_states: number;
+  collision_threshold: number;
+  force_magnitude: number;
+  frame_skip: number;
+  max_collision: number;
+  adaptive_collision: boolean;
+  step_size: number;
+  simplify: boolean;
+}
+
+const DEFAULT_PAYLOAD_CONFIG: AssemblyPayloadConfig = {
   engine: "physics",
   sequence_planner: "queue",
   path_planner: "bfs",
@@ -44,10 +60,6 @@ const DEFAULT_PAYLOAD = {
   simplify: false,
 };
 
-/**
- * All dashboard business logic: upload → joint-plan/multi-plan → poll → validate →
- * load artifacts (JSON + .npy fallback) → expose animation tracks to the viewer.
- */
 export function useAssemblyJob() {
   const logs = ref<string[]>([]);
   const sysStatus = ref("Checking...");
@@ -56,15 +68,49 @@ export function useAssemblyJob() {
 
   const uploadId = ref<string | null>(null);
   const models = ref<LoadedModel[]>([]);
-  const payloadJson = ref(JSON.stringify(DEFAULT_PAYLOAD, null, 2));
+  
+  const showAdvancedConfig = ref(false);
+  const payloadConfig = ref<AssemblyPayloadConfig>({ ...DEFAULT_PAYLOAD_CONFIG });
+  
+  const payloadJson = ref(
+    JSON.stringify(
+      {
+        assembly: { collection: null, assembly_id: null, upload_id: "" },
+        ...payloadConfig.value,
+      },
+      null,
+      2
+    )
+  );
+
+  watch(
+    payloadConfig,
+    (newConfig) => {
+      let currentPayload: Record<string, unknown> = {};
+      try {
+        currentPayload = JSON.parse(payloadJson.value);
+      } catch {
+        currentPayload = {};
+      }
+      payloadJson.value = JSON.stringify(
+        {
+          assembly: currentPayload.assembly || { collection: null, assembly_id: null, upload_id: uploadId.value || "" },
+          ...newConfig,
+        },
+        null,
+        2
+      );
+    },
+    { deep: true }
+  );
+
   const jobId = ref<string | null>(null);
   const jobOperation = ref<string>("");
   const isPolling = ref(false);
   const pollAttempt = ref(0);
   const jobIdInput = ref<string>("");
 
-  // Submesh editing state
-  const mappingAvailable = ref(false); // True if multi-mesh file detected
+  const mappingAvailable = ref(false);
   const objectNames = ref<string[]>([]);
   const currentFiles = ref<File[]>([]);
   const currentPartIds = ref<string[]>([]);
@@ -108,7 +154,6 @@ export function useAssemblyJob() {
   onBeforeUnmount(() => {
     cancelled = true;
     if (pollTimer) clearTimeout(pollTimer);
-    // Release browser object URLs (entries may share one URL for a multi-mesh file).
     new Set(models.value.map((m) => m.url)).forEach((u) => URL.revokeObjectURL(u));
     models.value = [];
   });
@@ -142,14 +187,12 @@ export function useAssemblyJob() {
       return;
     }
 
-    // A new upload invalidates the previous job's paths and animation.
     resetJobState();
     mappingAvailable.value = false;
     objectNames.value = [];
     currentFiles.value = [];
     currentPartIds.value = [];
     currentMapping.value = {};
-    // Entries may share one object URL (single multi-mesh file) — revoke once.
     new Set(models.value.map((m) => m.url)).forEach((u) => URL.revokeObjectURL(u));
     models.value = [];
 
@@ -166,9 +209,6 @@ export function useAssemblyJob() {
       const newUploadId: string | undefined = data.result?.source?.upload_id || data.upload_id;
       if (!newUploadId) throw new Error("Could not find upload_id in upload response");
 
-      // Register one viewer model per BACKEND part id (upload response),
-      // not one per filename: a single multi-mesh file yields several parts
-      // sharing its URL, each bound to its own `o` sub-mesh at play time.
       const partIds: string[] = Array.isArray(data.result?.part_ids) ? data.result.part_ids : [];
       currentPartIds.value = partIds;
       movePartId.value = partIds[0] || "";
@@ -179,7 +219,6 @@ export function useAssemblyJob() {
       const wanted = partIds.length > 0 ? partIds : uploaded.map((f) => stemOf(f.fileName));
       if (partIds.length > 0) addLog(`[ASSEMBLY MODEL] Discovered parts: ${partIds.join(", ")}`);
 
-      // Check if single file with multiple sub-meshes - prepare for editing (joint-plan only)
       if (objFiles.length === 1 && partIds.length > 1) {
         try {
           const names = await extractObjectNamesFromFile(objFiles[0]);
@@ -187,7 +226,6 @@ export function useAssemblyJob() {
             currentFiles.value = objFiles;
             currentPartIds.value = partIds;
             objectNames.value = names;
-            // Build initial auto-mapping
             const autoMapping: Record<string, string> = {};
             const unmatchedPartIds = new Set(partIds);
             names.forEach((name) => {
@@ -208,7 +246,6 @@ export function useAssemblyJob() {
             });
             currentMapping.value = autoMapping;
             mappingAvailable.value = true;
-            // First load with auto-mapping
             const { models: registered, unmapped } = registerModels(uploaded, wanted, autoMapping);
             const loaded: LoadedModel[] = registered.map((m) => ({ ...m }));
             for (const m of loaded) {
@@ -232,7 +269,6 @@ export function useAssemblyJob() {
         }
       }
 
-      // Normal flow (no multi-mesh or parsing failed)
       const { models: registered, unmapped } = registerModels(uploaded, wanted);
       const loaded: LoadedModel[] = registered.map((m) => ({ ...m }));
       for (const m of loaded) {
@@ -254,7 +290,6 @@ export function useAssemblyJob() {
         currentPayload.assembly = { ...(currentPayload.assembly || {}), upload_id: newUploadId };
         payloadJson.value = JSON.stringify(currentPayload, null, 2);
       } catch {
-        /* keep the user's JSON as-is; validated at submit time */
       }
     } catch (error: unknown) {
       phase.value = "idle";
@@ -270,7 +305,6 @@ export function useAssemblyJob() {
   function applyMapping() {
     addLog(`[MAPPING] Applying user mapping...`);
 
-    // Re-register models with new mapping
     const uploaded = currentFiles.value.map((file) => ({
       fileName: file.name,
       url: URL.createObjectURL(file),
@@ -278,7 +312,6 @@ export function useAssemblyJob() {
     const { models: registered, unmapped } = registerModels(uploaded, currentPartIds.value, currentMapping.value);
     const loaded: LoadedModel[] = registered.map((m) => ({ ...m }));
 
-    // Revoke old URLs
     new Set(models.value.map((m) => m.url)).forEach((u) => URL.revokeObjectURL(u));
 
     models.value = loaded;
@@ -292,6 +325,22 @@ export function useAssemblyJob() {
       addLog(`[ASSEMBLY MODEL] Part "${partId}" matches no uploaded file and cannot be displayed.`);
     }
     addLog(`[MAPPING] Mapping applied successfully.`);
+  }
+
+  async function handleCancelCurrentJob() {
+    if (!jobId.value) return addLog("No active task to cancel.");
+    try {
+      await axios.delete(`${API_BASE}/api/v1/jobs/${jobId.value}`, { timeout: 30000 });
+      addLog(`Task ${jobId.value.substring(0, 8)} cancelled successfully.`);
+      stopPolling();
+      phase.value = "failed";
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error) && error.response) {
+        addLog(`Cancel current job HTTP ${error.response.status}: ${JSON.stringify(error.response.data).slice(0, 200)}`);
+      } else {
+        addLog(`Cancel current job error: ${String(error)}`);
+      }
+    }
   }
 
   async function handleStartJob(endpoint: "joint-plan" | "multi-plan") {
@@ -311,7 +360,6 @@ export function useAssemblyJob() {
       return;
     }
 
-    // Join-Plan and Multi-Plan always use the original uploaded assembly.
     parsedPayload.assembly = { ...((parsedPayload.assembly as object) || {}), upload_id: uploadId.value };
     if (endpoint === "joint-plan" && movePartId.value) {
       parsedPayload.move_id = movePartId.value;
@@ -378,7 +426,6 @@ export function useAssemblyJob() {
         }
       } catch (error: unknown) {
         if (cancelled) return;
-        // Transient network/proxy blips must not spawn duplicate jobs: just retry the status read.
         if (axios.isAxiosError(error) && !error.response && attempt < MAX_POLL_ATTEMPTS) {
           addLog(`Poll network blip (${error.message}). Retrying...`);
           pollTimer = setTimeout(() => void pollJob(id, endpoint, attempt), POLL_INTERVAL_MS);
@@ -394,13 +441,11 @@ export function useAssemblyJob() {
 
   async function handleJobFailed(id: string, endpoint: string, terminalStatus: string) {
     phase.value = "failed";
-    // The snapshot carries status/artifacts; the detailed error comes from /result (409 + error body).
     let artifacts: string[] = [];
     try {
       const snap = await axios.get(`${API_BASE}/api/v1/jobs/${id}`, { timeout: 30000 });
       artifacts = snap.data?.result?.artifacts || [];
     } catch {
-      /* snapshot is best-effort here */
     }
     let code = "JOB_FAILED";
     let message = `Task ${terminalStatus} without further detail.`;
@@ -427,7 +472,6 @@ export function useAssemblyJob() {
     json_url: string;
     npy_url: string | null;
   }): Promise<{ name: string; matrix: number[][] }[] | null> {
-    // Primary: the JSON artifact the planner wrote.
     try {
       const { data } = await axios.get(`${API_BASE}${step.json_url}`, { timeout: 60000 });
       if (Array.isArray(data) && data.length > 0) return data;
@@ -437,7 +481,6 @@ export function useAssemblyJob() {
         `Artifact ${step.artifact}: JSON fetch failed (${axios.isAxiosError(error) ? error.message : String(error)}). Trying .npy fallback…`
       );
     }
-    // Fallback: the (N,4,4) .npy motion array (only used to recover/verify path data).
     if (!step.npy_url) return null;
     try {
       const npyjs = (await import("npyjs")).default;
@@ -488,9 +531,6 @@ export function useAssemblyJob() {
         return;
       }
 
-      // Map each step's move_id to the registered model by backend part id.
-      // Upload order is NOT assumed to match planner order, and a part id is
-      // never derived from a filename here: models already carry backend ids.
       addLog(`[ANIMATION] Result part IDs: ${manifest.steps.map((s: { move_id: unknown }) => String(s.move_id)).join(", ")}`);
       const byPartId = new Map<string, number>();
       models.value.forEach((m, idx) => {
@@ -545,8 +585,6 @@ export function useAssemblyJob() {
         addLog("No valid path survived validation. Nothing to animate.");
         return;
       }
-      // Keep backend manifest order: multi-plan steps are already sorted by
-      // sequence_index, which defines the faithful playback order.
       animations.value = loadedAnims;
       missingParts.value = missing;
       phase.value = "ready-to-play";
@@ -603,14 +641,12 @@ export function useAssemblyJob() {
     }
   }
 
-  /** Viewer confirmed a sub-mesh bind (one log per model+object). */
   function onMeshBound(info: MeshBindInfo) {
     addLog(
       `[ANIMATION] Mesh bound: ${info.partId} → ${info.meshCount} mesh(es) "${info.objectName}" in ${info.fileName}`
     );
   }
 
-  /** Viewer could not find the sub-mesh; that part stays static. */
   function onMeshMissing(info: MeshMissingInfo) {
     addLog(
       `[ANIMATION] ${info.partId} (sub-mesh "${info.objectName}" not found in ${info.fileName}; objects: ${info.childrenFound.join(", ") || "none"})`
@@ -633,6 +669,8 @@ export function useAssemblyJob() {
     modelNames,
     viewerModels,
     payloadJson,
+    payloadConfig,
+    showAdvancedConfig,
     jobId,
     jobOperation,
     isPolling,
@@ -651,6 +689,7 @@ export function useAssemblyJob() {
     handleDownloadZip,
     onMeshBound,
     onMeshMissing,
+    handleCancelCurrentJob,
     mappingAvailable,
     objectNames,
     currentPartIds,

@@ -30,15 +30,36 @@
       </div>
     </div>
 
-    <!-- Playback is intentionally unavailable in this release. -->
-    <div class="absolute top-4 left-4 z-10 flex max-w-[min(34rem,calc(100%-2rem))] items-start gap-3 app-card p-3">
-      <button disabled class="btn btn-outline btn-sm shrink-0 cursor-not-allowed opacity-60">
-        <span class="material-icons text-[15px]">lock</span>
-        Play
+    <!-- Playback controls -->
+    <div class="absolute top-4 left-4 z-10 flex items-center gap-2 app-card p-2">
+      <button
+        v-if="playback !== 'playing'"
+        class="btn btn-primary btn-sm"
+        :disabled="animations.length === 0"
+        @click="play"
+      >
+        <span class="material-icons text-[15px]">play_arrow</span>
+        {{ playback === "paused" ? "Resume" : "Play" }}
       </button>
-      <p class="text-[11px] leading-relaxed text-black/60">
-        Work in progress — animation feature is not ready yet. Please wait until the next version of the app.
-      </p>
+      <button
+        v-else
+        class="btn btn-outline btn-sm"
+        @click="pause"
+      >
+        <span class="material-icons text-[15px]">pause</span>
+        Pause
+      </button>
+      <button
+        class="btn btn-outline btn-sm"
+        :disabled="animations.length === 0 || playback === 'stopped'"
+        @click="resetPlayback"
+      >
+        <span class="material-icons text-[15px]">replay</span>
+        Reset
+      </button>
+      <span v-if="animations.length === 0" class="text-[11px] text-black/45">
+        Run a plan to enable playback.
+      </span>
     </div>
 
     <!-- Empty stage hint (no parts loaded — stage stays grid + lights only) -->
@@ -158,6 +179,25 @@ const posesByModel = computed(() => {
 function setState(s: PlaybackState) {
   playback.value = s;
   emit("playback-change", s);
+}
+
+function play() {
+  if (props.animations.length === 0) return;
+  // Restart from the beginning when replaying after the end.
+  if (playback.value === "ended") clockTime = 0;
+  setState("playing");
+}
+
+function pause() {
+  if (playback.value === "playing") setState("paused");
+}
+
+function resetPlayback() {
+  clockTime = 0;
+  setState("stopped");
+  // Snap every part back to its first-frame (assembled) pose.
+  const dur = stepDuration.value;
+  for (const [idx] of groups) applyPose(idx, 0, dur);
 }
 
 // ---- three.js core lives in the ported client viewer singleton (src/libs/3d/viewer.ts) ----
