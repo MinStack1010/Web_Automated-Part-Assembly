@@ -150,7 +150,7 @@ const canUpload = computed(() => staged.value.length > 0 && props.phase !== "upl
       </div>
       <div v-if="modelNames.length > 0" class="flex gap-2">
         <dt class="w-20 shrink-0 whitespace-nowrap">Parts</dt>
-        <dd class="text-carbon break-all">{{ modelNames.join(", ") }}</dd>
+        <dd class="text-carbon break-all">{{ modelNames.length }} part{{ modelNames.length > 1 ? 's' : '' }}</dd>
       </div>
     </dl>
   </section>
