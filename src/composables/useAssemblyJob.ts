@@ -349,6 +349,31 @@ export function useAssemblyJob() {
     }
   }
 
+  async function handleCancelCurrentJob() {
+    if (!jobId.value) return addLog("No active task to cancel.");
+    const currentJobId = jobId.value;
+    try {
+      await axios.delete(`${API_BASE}/api/v1/jobs/${currentJobId}`, { timeout: 30000 });
+      addLog(`Task ${currentJobId.substring(0, 8)} cancelled successfully.`);
+      stopPolling();
+      phase.value = "failed";
+      jobFailure.value = {
+        jobId: currentJobId,
+        operation: jobOperation.value,
+        status: "cancelled",
+        code: "JOB_CANCELLED",
+        message: "Task cancelled by user.",
+        artifacts: [],
+      };
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error) && error.response) {
+        addLog(`Cancel task failed (HTTP ${error.response.status}): ${JSON.stringify(error.response.data).substring(0, 200)}`);
+      } else {
+        addLog(`Error cancelling task: ${String(error)}`);
+      }
+    }
+  }
+
   async function pollJob(id: string, endpoint: string, attempts: number) {
     if (cancelled) return;
     isPolling.value = true;
@@ -642,6 +667,7 @@ export function useAssemblyJob() {
     missingParts,
     artifactProgress,
     jobFailure,
+    handleCancelCurrentJob,
     addLog,
     handleUpload,
     handleStartJob,

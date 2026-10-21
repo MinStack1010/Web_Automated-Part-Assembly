@@ -45,6 +45,7 @@
         @reset-selection="clearMeshSelection(true)"
         @start-job="onStartJob"
         @joint-plan-mode="onJointPlanClick"
+        @cancel-current-job="handleCancelCurrentJob"
       />
 
       <JobFailureCard v-if="jobFailure" :job-failure="jobFailure" />
@@ -95,6 +96,7 @@ const {
   pollAttempt,
   animations,
   jobFailure,
+  handleCancelCurrentJob,
   handleUpload,
   handleStartJob,
   onMeshBound,
