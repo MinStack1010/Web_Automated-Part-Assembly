@@ -16,6 +16,7 @@ const emit = defineEmits<{
   (e: "joint-plan-mode"): void;
   (e: "update:movePartId", value: string): void;
   (e: "reset-selection"): void;
+  (e: "cancel-current-job"): void;
 }>();
 </script>
 
@@ -87,9 +88,24 @@ const emit = defineEmits<{
       Click a model part or choose it here. Only one part can be selected at a time.
     </p>
 
-    <p v-if="jobId" class="text-[11px] text-black/45 mono truncate">
-      Task: <span class="text-primary font-semibold">{{ jobId }}</span>
-      <span> ({{ jobOperation || "?" }})</span>
-    </p>
+    <!-- Current task with Cancel button -->
+    <div
+      v-if="jobId"
+      class="border-t border-black/10 pt-2 flex items-center justify-between gap-2"
+    >
+      <span class="text-[11px] text-black/45 mono truncate">
+        Task:
+        <span class="text-primary font-semibold">{{ jobId }}</span>
+        <span> ({{ jobOperation || "?" }})</span>
+      </span>
+
+      <button
+        type="button"
+        @click="emit('cancel-current-job')"
+        class="btn btn-danger btn-sm text-[10px] shrink-0 px-2 py-1"
+      >
+        Cancel Current Job
+      </button>
+    </div>
   </section>
 </template>
