@@ -30,15 +30,48 @@
       </div>
     </div>
 
-    <!-- Playback is intentionally unavailable in this release. -->
-    <div class="absolute top-4 left-4 z-10 flex max-w-[min(34rem,calc(100%-2rem))] items-start gap-3 app-card p-3">
-      <button disabled class="btn btn-outline btn-sm shrink-0 cursor-not-allowed opacity-60">
-        <span class="material-icons text-[15px]">lock</span>
+    <div class="absolute top-4 left-4 z-10 flex items-center gap-2 app-card p-2 shadow-md">
+      <button
+        v-if="playback === 'stopped' || playback === 'ended'"
+        @click="playAnimation"
+        :disabled="animations.length === 0"
+        :class="animations.length === 0 ? 'opacity-50 cursor-not-allowed' : ''"
+        class="btn btn-primary btn-sm flex items-center gap-1"
+      >
+        <span class="material-icons text-[15px]">play_arrow</span>
         Play
       </button>
-      <p class="text-[11px] leading-relaxed text-black/60">
-        Work in progress — animation feature is not ready yet. Please wait until the next version of the app.
-      </p>
+      <button
+        v-else-if="playback === 'playing'"
+        @click="pauseAnimation"
+        :disabled="animations.length === 0"
+        :class="animations.length === 0 ? 'opacity-50 cursor-not-allowed' : ''"
+        class="btn btn-outline btn-sm flex items-center gap-1"
+      >
+        <span class="material-icons text-[15px]">pause</span>
+        Pause
+      </button>
+      <button
+        v-else-if="playback === 'paused'"
+        @click="resumeAnimation"
+        :disabled="animations.length === 0"
+        :class="animations.length === 0 ? 'opacity-50 cursor-not-allowed' : ''"
+        class="btn btn-primary btn-sm flex items-center gap-1"
+      >
+        <span class="material-icons text-[15px]">play_arrow</span>
+        Resume
+      </button>
+
+      <button
+        @click="resetAnimation"
+        :disabled="animations.length === 0"
+        :class="animations.length === 0 ? 'opacity-50 cursor-not-allowed' : ''"
+        class="btn btn-outline btn-sm flex items-center gap-1"
+        title="Reset animation"
+      >
+        <span class="material-icons text-[15px]">replay</span>
+        Reset
+      </button>
     </div>
 
     <!-- Empty stage hint (no parts loaded — stage stays grid + lights only) -->
@@ -158,6 +191,28 @@ const posesByModel = computed(() => {
 function setState(s: PlaybackState) {
   playback.value = s;
   emit("playback-change", s);
+}
+
+function playAnimation() {
+  if (props.animations.length === 0) return;
+  clockTime = 0;
+  setState("playing");
+}
+
+function pauseAnimation() {
+  setState("paused");
+}
+
+function resumeAnimation() {
+  setState("playing");
+}
+
+function resetAnimation() {
+  clockTime = 0;
+  setState("stopped");
+  for (const [idx] of groups) {
+    applyPose(idx, 0, stepDuration.value);
+  }
 }
 
 // ---- three.js core lives in the ported client viewer singleton (src/libs/3d/viewer.ts) ----
