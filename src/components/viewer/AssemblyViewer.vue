@@ -34,6 +34,8 @@
       <button
         v-if="playback === 'stopped' || playback === 'ended'"
         @click="playAnimation"
+        :disabled="animations.length === 0"
+        :class="animations.length === 0 ? 'opacity-50 cursor-not-allowed' : ''"
         class="btn btn-primary btn-sm flex items-center gap-1"
       >
         <span class="material-icons text-[15px]">play_arrow</span>
@@ -42,6 +44,8 @@
       <button
         v-else-if="playback === 'playing'"
         @click="pauseAnimation"
+        :disabled="animations.length === 0"
+        :class="animations.length === 0 ? 'opacity-50 cursor-not-allowed' : ''"
         class="btn btn-outline btn-sm flex items-center gap-1"
       >
         <span class="material-icons text-[15px]">pause</span>
@@ -50,6 +54,8 @@
       <button
         v-else-if="playback === 'paused'"
         @click="resumeAnimation"
+        :disabled="animations.length === 0"
+        :class="animations.length === 0 ? 'opacity-50 cursor-not-allowed' : ''"
         class="btn btn-primary btn-sm flex items-center gap-1"
       >
         <span class="material-icons text-[15px]">play_arrow</span>
@@ -58,6 +64,8 @@
 
       <button
         @click="resetAnimation"
+        :disabled="animations.length === 0"
+        :class="animations.length === 0 ? 'opacity-50 cursor-not-allowed' : ''"
         class="btn btn-outline btn-sm flex items-center gap-1"
         title="Reset animation"
       >
